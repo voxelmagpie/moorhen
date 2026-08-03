@@ -117,9 +117,10 @@ generateEqMod tDef dataConss sr srcPath = do
   neqExpr <- parseExpr "\\x, y -> !(x == y)" srcPath
   let neqVDef = A.VDef (VName "neq", sr) (Just (OpName "!=", sr)) [] [] Nothing (Just neqExpr) 1
 
+  let vDefsOrdered = [eqVDef, neqVDef]
   let nameMap = HM.fromList [(VName "eq", eqVDef), (VName "neq", neqVDef)]
   let opMap = HM.fromList [(OpName "==", List1 eqVDef []), (OpName "!=", List1 neqVDef [])]
-  let vDefs = A.BlockInner {nameMap, opMap}
+  let vDefs = A.BlockInner {vDefsOrdered, nameMap, opMap}
 
   let eqTrait = (A.TNamed (TName "Eq", sr) [], sr)
 

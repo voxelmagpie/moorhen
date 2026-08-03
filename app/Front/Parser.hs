@@ -124,87 +124,82 @@ letDef = do
         (_, paramsSr1) <- symbol ")"
         pure (xs, srcRangeOf paramsSr0 paramsSr1)
 
-  oneOf
-    [ -- Indented let
-      (PredTk Indent,)
-        $ do
-          _ <- indent
-          gps <- parseGenParamsMultilineMaybe
-          peekToken >>= \case
-            Just (Symbol "(", _) -> do
-              params <-
-                oneOf
-                  [ ( PredMany [PredSym "(", PredTk Indent],
-                      do
-                        (_, paramsSr0) <- symbol "("
-                        _ <- indent
-                        xs <- many1 (PredNot $ PredTk Outdent) $ param <* optCommaNewline
-                        (_, paramsSr1) <- (outdent >> newline) *> symbol ")" <* newline
-                        pure (toList xs, srcRangeOf paramsSr0 paramsSr1)
-                    ),
-                    (PredSym "(", paramsInline <* newline)
-                  ]
+  peekToken >>= \case
+    Just (Indent, _) -> do
+      _ <- indent
+      gps <- parseGenParamsMultilineMaybe
+      peekToken >>= \case
+        Just (Symbol "(", _) -> do
+          params <-
+            oneOf
+              [ ( PredMany [PredSym "(", PredTk Indent],
+                  do
+                    (_, paramsSr0) <- symbol "("
+                    _ <- indent
+                    xs <- many1 (PredNot $ PredTk Outdent) $ param <* optCommaNewline
+                    (_, paramsSr1) <- (outdent >> newline) *> symbol ")" <* newline
+                    pure (toList xs, srcRangeOf paramsSr0 paramsSr1)
+                ),
+                (PredSym "(", paramsInline <* newline)
+              ]
 
-              retTypeExprMaybe <- optWithPrefixTk (Symbol ":") $ typeExprInd <* newline
-              (effs, _) <- effectsNewlineMaybe
-              whereClauses <-
-                fromMaybe [] <$> optWithPrefixTk (Kw KwWhere) ((toList <$> list1 whereClause (PredSym ",")) <* newline)
-              _ <- outdent
+          retTypeExprMaybe <- optWithPrefixTk (Symbol ":") $ typeExprInd <* newline
+          (effs, _) <- effectsNewlineMaybe
+          whereClauses <-
+            fromMaybe [] <$> optWithPrefixTk (Kw KwWhere) ((toList <$> list1 whereClause (PredSym ",")) <* newline)
+          _ <- outdent
 
-              exprMaybe <-
-                opt
-                  (PredMany [PredTk Newline, PredSym "->"])
-                  ((newline >> symbol "->") *> indBlockExpr)
+          exprMaybe <-
+            opt
+              (PredMany [PredTk Newline, PredSym "->"])
+              ((newline >> symbol "->") *> indBlockExpr)
 
-              mkFnVDef letSr name op gps params retTypeExprMaybe whereClauses effs exprMaybe
-            _ -> do
-              typeExpr' <- optWithPrefixTk (Symbol ":") $ typeExprInd <* newline
-              whereClauses <- opt (PredKw KwWhere) (kw KwWhere *> list1 whereClause (PredSym ",") <* newline)
-              _ <- outdent
-              exprMaybe <-
-                opt (PredMany [PredTk Newline, PredSym "="]) $ (newline >> symbol "=") *> indBlockExpr
-              pure
-                $ A.VDef
-                  { A.name,
-                    A.op,
-                    A.genParams = gps,
-                    A.whereClauses = maybe [] toList whereClauses,
-                    A.typeExpr = typeExpr',
-                    A.expr = exprMaybe,
-                    A.idx = -1
-                  },
-      -- Not indented let
-      (PredOneOf [PredSym "[", PredSym ":", PredKw KwWhere, PredSym "=", PredSym "("],)
-        $ do
-          genParams <- parseGenParamsMaybe
-          peekToken >>= \case
-            Just (Symbol "(", _) -> do
-              params <- paramsInline
-              retTypeExprMaybe <- optWithPrefixTk (Symbol ":") typeExpr
-              (effs, _) <- effectsMaybe
-              whereClauses <- maybe [] toList <$> opt (PredKw KwWhere) (kw KwWhere *> list1 whereClause (PredSym ","))
-              exprMaybe <-
-                peekToken >>= \case
-                  Just (Symbol "->", _) -> symbol "->" *> (Just <$> expr False)
-                  Just (Indent, _) -> (Just <$> indBlockExpr)
-                  _ -> pure Nothing
-              mkFnVDef letSr name op genParams params retTypeExprMaybe whereClauses effs exprMaybe
-            _ -> do
-              typeExpr' <- optWithPrefixTk (Symbol ":") typeExpr
-              whereClauses <- opt (PredKw KwWhere) (kw KwWhere *> list1 whereClause (PredSym ","))
-              exprMaybe <- optWithPrefixTk (Symbol "=") (indBlockOrExpr True)
+          mkFnVDef letSr name op gps params retTypeExprMaybe whereClauses effs exprMaybe
+        _ -> do
+          typeExpr' <- optWithPrefixTk (Symbol ":") $ typeExprInd <* newline
+          whereClauses <- opt (PredKw KwWhere) (kw KwWhere *> list1 whereClause (PredSym ",") <* newline)
+          _ <- outdent
+          exprMaybe <-
+            opt (PredMany [PredTk Newline, PredSym "="]) $ (newline >> symbol "=") *> indBlockExpr
+          pure
+            $ A.VDef
+              { A.name,
+                A.op,
+                A.genParams = gps,
+                A.whereClauses = maybe [] toList whereClauses,
+                A.typeExpr = typeExpr',
+                A.expr = exprMaybe,
+                A.idx = -1
+              }
+    _ -> do
+      genParams <- parseGenParamsMaybe
+      peekToken >>= \case
+        Just (Symbol "(", _) -> do
+          params <- paramsInline
+          retTypeExprMaybe <- optWithPrefixTk (Symbol ":") typeExpr
+          (effs, _) <- effectsMaybe
+          whereClauses <- maybe [] toList <$> opt (PredKw KwWhere) (kw KwWhere *> list1 whereClause (PredSym ","))
+          exprMaybe <-
+            peekToken >>= \case
+              Just (Symbol "->", _) -> symbol "->" *> (Just <$> expr False)
+              Just (Indent, _) -> (Just <$> indBlockExpr)
+              _ -> pure Nothing
+          mkFnVDef letSr name op genParams params retTypeExprMaybe whereClauses effs exprMaybe
+        _ -> do
+          typeExpr' <- optWithPrefixTk (Symbol ":") typeExpr
+          whereClauses <- opt (PredKw KwWhere) (kw KwWhere *> list1 whereClause (PredSym ","))
+          exprMaybe <- optWithPrefixTk (Symbol "=") (indBlockOrExpr True)
 
-              pure
-                $ A.VDef
-                  { A.name,
-                    A.op,
-                    A.genParams,
-                    A.whereClauses = maybe [] toList whereClauses,
-                    A.typeExpr = typeExpr',
-                    A.expr = exprMaybe,
-                    A.idx = -1
-                  }
-    ]
+          pure
+            $ A.VDef
+              { A.name,
+                A.op,
+                A.genParams,
+                A.whereClauses = maybe [] toList whereClauses,
+                A.typeExpr = typeExpr',
+                A.expr = exprMaybe,
+                A.idx = -1
+              }
 
 param :: (Args) => IO (A.Destructure, Maybe A.TypeExpr)
 param = do
@@ -573,8 +568,8 @@ modDef = do
   _ <- kw KwFor
   forTypeExpr <- typeExpr
 
-  (traits, nameMap, opMap, wh) <- parseTraitsWhsInner
-  let vDefs = A.BlockInner {nameMap, opMap}
+  (traits, vDefsOrdered, nameMap, opMap, wh) <- parseTraitsWhsInner
+  let vDefs = A.BlockInner {vDefsOrdered, nameMap, opMap}
 
   let tDef = A.TDef {name, genParams, isEffect = False, tDef = A.Module forTypeExpr vDefs traits wh}
   pure tDef
@@ -585,14 +580,14 @@ traitDef = do
   name <- tName
   genParams <- parseGenParamsMaybe
 
-  (traits, nameMap, opMap, wh) <- parseTraitsWhsInner
-  let vDefs = A.BlockInner {nameMap, opMap}
+  (traits, vDefsOrdered, nameMap, opMap, wh) <- parseTraitsWhsInner
+  let vDefs = A.BlockInner {vDefsOrdered, nameMap, opMap}
 
   let tDef = A.TDef {name, genParams, isEffect = False, tDef = A.Trait vDefs traits wh}
   pure tDef
 
 parseTraitsWhsInner ::
-  (Args) => IO ([A.TypeExpr], HashMap VName A.VDef, HashMap OpName (List1 A.VDef), A.WhereClauses)
+  (Args) => IO ([A.TypeExpr], [A.VDef], HashMap VName A.VDef, HashMap OpName (List1 A.VDef), A.WhereClauses)
 parseTraitsWhsInner = do
   traits <- opt (PredSym ":") (symbol ":" *> list1 typeExpr (PredSym ",")) <&> maybe [] toList
 
@@ -605,18 +600,22 @@ parseTraitsWhsInner = do
 
   _ <- outdent
 
-  vDefsList <- newVar def
-  opsList <- newVar def
-  forM_ (zip [0 ..] defs) $ \(idx, vDef@(A.VDef {A.name = (name', sr), A.op = opMaybe})) -> do
-    xs <- getVar vDefsList
+  vDefsMap <- newVar def
+  opsMap <- newVar def
+  vDefsRev <- newVar []
+  forM_ (zip [0 ..] defs) $ \(idx, vDef'@(A.VDef {A.name = (name', sr), A.op = opMaybe})) -> do
+    xs <- getVar vDefsMap
     when (name' `elem` HM.keys xs) $ throw sr "Duplicate name"
-    modVar vDefsList $ HM.insert name' $ vDef {A.idx}
+    let vDef = vDef' {A.idx}
+    modVar vDefsMap $ HM.insert name' $ vDef
+    modVar vDefsRev (vDef :)
     forM_ opMaybe $ \(op, _) ->
-      modVar opsList $ HM.insertWith (<>) op (List1 vDef [])
+      modVar opsMap $ HM.insertWith (<>) op (List1 vDef [])
 
-  vDefsList' <- getVar vDefsList
-  opsList' <- getVar opsList
-  pure (traits, vDefsList', opsList', wh)
+  vDefsList' <- getVar vDefsMap
+  opsList' <- getVar opsMap
+  vDefsOrdered <- getVar vDefsRev <&> reverse
+  pure (traits, vDefsOrdered, vDefsList', opsList', wh)
 
 whereClause :: (Args) => IO (A.TypeExpr, A.TypeExpr)
 whereClause = do

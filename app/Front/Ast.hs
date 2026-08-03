@@ -37,14 +37,15 @@ data VDef = VDef
     op :: Maybe OpNameL,
     genParams :: [(TypeKind, TNameL)],
     whereClauses :: WhereClauses,
-    typeExpr :: Maybe TypeExpr, -- Optional for impls of trait fns
-    expr :: Maybe Expr,
+    typeExpr :: Maybe TypeExpr, -- Nothing for impls of trait fns
+    expr :: Maybe Expr, -- Nothing for trait functions and builtins
     idx :: Int
   }
   deriving (Show, Generic, Eq)
 
 data BlockInner = BlockInner
-  { nameMap :: HashMap VName VDef,
+  { vDefsOrdered :: [VDef],
+    nameMap :: HashMap VName VDef,
     opMap :: HashMap OpName (List1 VDef)
   }
   deriving (Show, Generic, Eq)

@@ -1,0 +1,8 @@
+//false
+
+let main () : Bool
+	f(2, 3)
+
+
+let f [A] (x : A, y : A) : Bool where A : Eq
+	x == y

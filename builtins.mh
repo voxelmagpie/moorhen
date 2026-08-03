@@ -51,29 +51,29 @@ trait Show
 
 
 
-mod IntEq for Int
-	let eq == : \Int, Int -> Bool
-	let neq != : \Int, Int -> Bool
+mod IntEq for Int : Eq
+	let eq ==
+	let neq !=
 
-mod I32Eq for I32
-	let eq == : \I32, I32 -> Bool
-	let neq != : \I32, I32 -> Bool
+mod I32Eq for I32 : Eq
+	let eq ==
+	let neq !=
 
-mod RealEq for Real
-	let eq == : \Real, Real -> Bool
-	let neq != : \Real, Real -> Bool
+mod RealEq for Real : Eq
+	let eq ==
+	let neq !=
 
-mod BoolEq for Bool
-	let eq == : \Bool, Bool -> Bool
-	let neq != : \Bool, Bool -> Bool
+mod BoolEq for Bool : Eq
+	let eq ==
+	let neq !=
 
-mod StringEq for String
-	let eq == : \String, String -> Bool
-	let neq != : \String, String -> Bool
+mod StringEq for String : Eq
+	let eq ==
+	let neq !=
 
-mod UnitEq for Unit
-	let eq == : \Unit, Unit -> Bool
-	let neq != : \Unit, Unit -> Bool
+mod UnitEq for Unit : Eq
+	let eq ==
+	let neq !=
 
 
 

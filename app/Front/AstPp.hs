@@ -54,11 +54,11 @@ prettyPrintTDef tDef =
         BuiltinTypeDecl -> T.concat ["builtin ", genericStr, un $ fst tDef.name]
         Module t defs sigList wh -> T.concat ["mod ", genericStr, un $ fst tDef.name, " for ", prettyPrintType t, sigList', prettyPrintWheres wh, "\n", defs', "\n"]
           where
-            defs' = T.unlines $ toList defs.nameMap <&> (snd >>> prettyPrintVDef >>> ("\t" <>))
+            defs' = T.unlines $ toList defs.vDefsOrdered <&> (prettyPrintVDef >>> ("\t" <>))
             sigList' = if null sigList then "" else " : " <> T.intercalate ", " (prettyPrintType <$> sigList)
         Trait defs sigList wh -> T.concat ["trait ", genericStr, un $ fst tDef.name, sigList', prettyPrintWheres wh, "\n", defs', "\n"]
           where
-            defs' = T.unlines $ toList defs.nameMap <&> (snd >>> prettyPrintVDef >>> ("\t" <>))
+            defs' = T.unlines $ toList defs.vDefsOrdered <&> (prettyPrintVDef >>> ("\t" <>))
             sigList' = if null sigList then "" else " : " <> T.intercalate ", " (prettyPrintType <$> sigList)
 
 prettyPrintDataCons :: DataCons -> Text

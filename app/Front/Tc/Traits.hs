@@ -74,7 +74,7 @@ getTrait tcIn traitFqn = do
       let tDef = must $ HM.lookup tName ast.tDefs
       let ctx = mkFileCtx ns ast' tcIn
       case tDef.tDef of
-        A.Trait vDefs _ _ -> visitTrait ctx tDef vDefs.opMap vDefs.nameMap
+        A.Trait x _ _ -> visitTrait ctx tDef x.vDefsOrdered x.opMap
         _ -> undefined
     else do
       pkg' <- if pkg == thisPkgName then pure thisPkg else getDepPkg pkg
@@ -230,8 +230,8 @@ lookupMembVNameInCtxWhere ctx t name = do
         pure []
   pure $ concat $ concat xs
 
-visitTrait :: (MonadTc m) => Ctx -> A.TDef -> HashMap OpName (List1 A.VDef) -> HashMap VName A.VDef -> m H.Trait
-visitTrait outerCtx tDef opMap vDefs = do
+visitTrait :: (MonadTc m) => Ctx -> A.TDef -> [A.VDef] -> HashMap OpName (List1 A.VDef) -> m H.Trait
+visitTrait outerCtx tDef vDefs opMap = do
   (genParams, selfType, blkFqn, ctxWithGenParams, traits, recursiveNames, wh) <- visitBlockDecl outerCtx tDef
 
   let blkCtx = ctxWithGenParams {block = Just (fst tDef.name, selfType)}
@@ -262,8 +262,8 @@ visitTrait outerCtx tDef opMap vDefs = do
             name = fst tDef.name,
             fqn = blkFqn,
             selfType = selfTypeGp,
-            vDefs = HM.elems vDefs',
-            names = vDefs',
+            vDefs = vDefs',
+            names = HM.fromList $ vDefs' <&> \v -> (fst v.vDef.name, v),
             ops = opMap <&> (<&> ((.name) >>> fst)),
             traits,
             whereClauses = wh,
