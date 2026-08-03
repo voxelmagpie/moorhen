@@ -1,0 +1,18 @@
+//"3,1"
+
+let main () : String
+	let x = X{ a = 1, b = 2 }
+	let x = x.a + x.b
+	let y : Y = A{ a = (1,2) }
+	let y =
+		match y
+			A{a as (a, _)} -> a
+			B{b} -> b
+	x.show() ++ "," ++ y.show()
+
+data X {
+	a : Int
+	b : Int
+}
+
+data Y = A { a : (Int, Int) } | B { b : Int }

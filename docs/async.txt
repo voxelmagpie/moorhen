@@ -1,0 +1,4 @@
+HirToMir performs monomorphisation of any value definition which is generic over an effect type.
+This is because javascript functions cannot be generic over async.
+This will also be necessary when targetting native code as async functions need to be implemented as a state machine
+which cannot be abstracted over.

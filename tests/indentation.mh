@@ -1,0 +1,12 @@
+//"abcdef"
+
+let main () : String
+//
+		concat(
+				"abc"
+				"def"
+		)
+		//
+
+let concat (x : String, y : String) : String
+	x ++ y

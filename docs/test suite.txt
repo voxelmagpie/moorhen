@@ -1,0 +1,3 @@
+The tests directory contains small Moorhen programs.
+Tests should aim to be small and test just one language feature
+The comment at the start of the file is the expected output (a JavaScript literal value).

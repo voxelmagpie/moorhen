@@ -1,0 +1,39 @@
+//3
+
+trait DoesThings2 : DoesThings
+	let bar [Z] (x: Self, a: Z) : Int where Z : DoesThings
+
+trait DoesThings
+	let foo (x: Self) : Int
+
+mod DoesThingsInt for Int : DoesThings,DoesThings2
+	let foo (x) -> x+1
+	let bar (x, a)
+		x + a.foo()
+
+mod DoesThingsVec [A] for Vec[A] : DoesThings2 where A : DoesThings2
+	let foo (x)
+		x.atOrPanic(0).foo()
+	let bar (x, a)
+		x.atOrPanic(0).bar(a)
+
+let g
+	[A]
+	(x: A)
+	: Int
+	where A: DoesThings2
+->
+	x.bar(1)
+
+let f
+	[A]
+	(x: Vec[A])
+	: Int
+	where A: DoesThings2
+->
+	g(x)
+
+let main () : Int
+	f([1])
+
+

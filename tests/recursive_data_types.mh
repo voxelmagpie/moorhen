@@ -1,0 +1,15 @@
+//"1\n2\n3\n"
+
+data List [A] = Empty | Head(A, List[A])
+
+
+let main () : String
+	let xs : List[Real] = Head(1.0, Head(2.0, Head(3.0, Empty)))
+	print("", xs)
+
+let print (result : String, xs : List[Real]) : String
+	match xs
+		Empty
+			result
+		Head(x, xs)
+			print(result ++ x.show() ++ "\n", xs)

@@ -1,0 +1,34 @@
+MIR -> JS types:
+
+data X
+undefined
+
+
+data X (Int)
+Num
+
+
+data X (Int, Int)
+[Num, Num]
+
+
+data X | Y | Z
+Num
+
+
+data X (Int) | Y | Z
+[Num (data constructor index), data (value of active data constructor)]
+X(3) -> [0, 3]
+Y -> [1, undefined]
+
+
+
+Lazy[A]
+[Bool, function() => A]
+The eval function (implemented in builtins.js) sets the bool to true and 
+overwrites the function with the value in the thunk.
+If the thunk is already evaluated then just gets the value.
+
+
+Vec[A]
+[A]

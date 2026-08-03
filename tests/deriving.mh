@@ -1,0 +1,9 @@
+//false
+
+#deriving("Eq")
+data X = A | B(Int) | C
+
+let main () : Bool
+	let x : X = A
+	let y : X = B(3)
+	x == y

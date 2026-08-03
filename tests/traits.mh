@@ -1,0 +1,39 @@
+//2
+
+trait DoesThings
+	let foo (x: Self) : Int
+	let baz (x: Self) : Int
+
+trait DoesThings2 : DoesThings
+	let bar (x: Self) : Int
+
+mod DoesThingsmod for Int : DoesThings2
+	let foo (x)
+		x + 1
+	let bar (x)
+		x - 1
+	let baz (x)
+		x * 2
+	let barry (x : Int) : Int
+		x + 9
+
+let g
+	[A]
+	(x: A)
+	: Int
+	where A: DoesThings
+->
+	x.foo()
+
+let f
+	[A]
+	(x: A)
+	: Int
+	where A: DoesThings
+->
+	g(x)
+
+let main () : Int
+	f(1)
+
+

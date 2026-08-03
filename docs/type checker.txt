@@ -1,0 +1,9 @@
+The type system is not constraint-based nor is it based on Hindley-Milner.
+Instead, type information flows down through the expression tree in the form of a 'partial type' (PType).
+A partial type hint is used because sometimes only parts of the type are known, for example when accessing a generic
+function that has a concrete return type.
+
+Effects information is gathered while visiting the expression tree and stored in the type of the closure expression.
+
+Type checking of definitions is split in order to handle recursion without causing the type checker to loop infinitely.
+Type definitions are handled by visitTDef1 and visitTDef2, value definitions by visitVDef and visitVDefExpr.

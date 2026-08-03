@@ -1,0 +1,3 @@
+let assert (x : Bool) : ()
+	if x then () else panic("Assert fail")
+

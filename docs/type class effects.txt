@@ -1,0 +1,20 @@
+The type class effects pattern is used to that code can be written in the IO monad and 
+make use of mutable data structures without being able to perform arbitrary IO.
+All code that manipulates mutable state or performs side effects is kept in one place.
+
+
+class Monad m => Ef m where
+	f :: m ()
+
+data MyState ...
+
+type EfImpl = State MyState
+
+type EfImplIO = ReaderT MyState IO
+
+instance Ef EfImpl where
+	f = ...
+
+instance Ef EfImplIO where
+	f = ...
+

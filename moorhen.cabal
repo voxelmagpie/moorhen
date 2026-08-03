@@ -1,0 +1,86 @@
+cabal-version:   3.0
+name:            moorhen
+version:         0.1.0.0
+license:         MPL-2.0
+license-file:    LICENCE
+maintainer:      voxelmagpie@mailbox.org
+author:          VoxelMagpie
+tested-with:     ghc ==9.12.4 || ==9.10.3
+synopsis:
+    Functional language with imperative control flow, immutable data, and effects tracking
+
+category:        Language
+build-type:      Simple
+extra-doc-files: README.md
+
+executable moorhen
+    main-is:            Main.hs
+    build-tool-depends: alex:alex
+    hs-source-dirs:     app
+    other-modules:
+        Front.Lexer
+        Front.LexPost
+        MhPrelude
+        Front.Tokens
+        SrcLoc
+        Names
+        Front.Ast
+        Front.AstPp
+        Front.Parser
+        Front.Macros
+        Front.Hir
+        Front.HirFns
+        Front.Tc.Tc
+        Front.Tc.Expr
+        Front.Tc.Context
+        Front.Tc.State
+        Front.Tc.Error
+        Front.Tc.Names
+        Front.Tc.Inputs
+        Front.Tc.Traits
+        TypeString
+        Front.Tc.StateImpl
+        Front.Tc.Generics
+        Front.Tc.Show
+        Error
+        Back.MirToJs
+        Vars
+        Front.Tc.PType
+        Front.Tc.Types
+        CmdLine
+        Embed
+        Timings
+        Front.TypeKind
+        Mid.Mir
+        Mid.HirToMir
+        Mid.Optimiser
+        Driver
+        Tests
+        Front.Tc.Patterns
+        Front.Tc.VDef
+
+    default-language:   GHC2021
+    default-extensions:
+        OverloadedStrings LambdaCase NoImplicitPrelude
+        DuplicateRecordFields NoFieldSelectors OverloadedRecordDot
+        DeriveAnyClass DerivingStrategies StrictData FunctionalDependencies
+        TypeFamilies RecordWildCards
+
+    ghc-options:        -Wall -Wunused-packages -rtsopts=all -threaded
+    build-depends:
+        base,
+        hashable,
+        text,
+        array,
+        mtl,
+        directory,
+        bytestring,
+        vector,
+        data-default,
+        unordered-containers,
+        newtype-generics,
+        time,
+        async,
+        filepath,
+        file-embed,
+        hashtables

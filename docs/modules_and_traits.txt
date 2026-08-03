@@ -1,0 +1,13 @@
+Traits and 'modules' in this language are somewhere between Rust's traits and OcaML's modules.
+They are bound to a 'Self' type just as Rust's traits are, in order to enable the OOP dot accessor syntax.
+
+The term 'block' is used in the code to describe either a module or a trait.
+
+When the dot accessor is used (e.g. x.f()), all modules in scope (current file or imported) are searched for a
+matching function.
+In generic code, the where clauses on the function are checked first.
+
+Generic functions with where clauses are implemented via partial application of an implicit parameter.
+The function takes the where clause tables and returns a closure that contains the actual function code.
+The inner closure captures the where clause implicit parameter.
+

@@ -1,0 +1,6 @@
+//"abcdef"
+
+let main () : String
+	let x = "abc"
+	let x = lazy(\ -> x ++ "def")
+	x.eval()

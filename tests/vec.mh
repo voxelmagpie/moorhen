@@ -1,0 +1,13 @@
+//"7,8"
+
+let main () : String
+	let xs = [9,2,3,f(2)] ++ emptyVec ++ singletonVec(5) // 9,2,3,4,5
+	let xs = xs ++ buildVec(3, \i -> 6 + i) // 9,2,3,4,5,6,7,8
+
+	xs.setAtOrPanic(5, 7) // 9,2,3,4,7,6,7,8
+	let xs = xs.sort(\x, y -> if x < y then OrdLt else if x == y then OrdEq else OrdGt) // 2,3,4,6,7,7,8,9
+	let i = xs.atOrPanic(5) // 7
+	i.show() ++ "," ++ xs.length().show()
+
+let f (i : Int) : Int
+	i + 2

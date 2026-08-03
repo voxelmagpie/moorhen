@@ -1,0 +1,7 @@
+//3
+
+let main () : String
+	f(3.0, 5.0).show()
+
+let f (x : Real, _ : Real) : Real
+	x

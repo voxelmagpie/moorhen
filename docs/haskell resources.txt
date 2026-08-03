@@ -1,0 +1,2 @@
+What I Wish I Knew When Learning Haskell https://sdiehl.github.io/wiwinwlh
+Haskell wikibook https://en.wikibooks.org/wiki/Haskell

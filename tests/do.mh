@@ -1,0 +1,6 @@
+//"9"
+
+let main () : String
+	let x = 3.0
+	let y = 6.0
+	(x+y).show()

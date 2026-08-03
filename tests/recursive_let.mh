@@ -1,0 +1,5 @@
+//-3
+let main () : Int
+	let rec f (x : Int) : Int
+		if x < 0 then x else f(x - 3)
+	f(6)

@@ -1,0 +1,7 @@
+//"1"
+
+let main () : String
+	try f(1) catch String x then x
+
+let f (i : Int) : String @Throws[String]
+	if i > 3 then throw "big" else i.show()

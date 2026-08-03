@@ -1,0 +1,11 @@
+//1
+
+let main () : Int
+	let mut j = 0
+	let it : Iter[Int] = Next(1, \ -> Next(2, \ -> End))
+	foreach i in it
+		set j = j + i
+		if j >= 1
+			break
+
+	j

@@ -1,0 +1,5 @@
+//"1,2"
+let main () : String
+	let xs : Iter[Int] = Next(1, \ -> Next(2, \ -> End))
+	let xs = xs.collect()
+	xs.atOrPanic(0).show() ++ "," ++ xs.atOrPanic(1).show()

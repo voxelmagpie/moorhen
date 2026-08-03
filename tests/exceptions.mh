@@ -1,0 +1,19 @@
+//"?!"
+let main () : String
+	let mut s0 = ""
+	let s1 = try f(-3).show() catch Err e then e.0
+	let s1 =
+		try
+			f(-3).show()
+		catch Err e
+			e.0
+		catch _
+			"???"
+		finally
+			set s0 = "!"
+	s1 ++ s0
+
+data Err = Err(String)
+
+let f (i : Int) : Int @(Throws[Err])
+	if i < 0 then throw Err("?") else i + 1

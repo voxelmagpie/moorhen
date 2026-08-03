@@ -1,0 +1,19 @@
+//17
+
+
+let main () : Int
+	let x = X{ a = 3, b = ((1, 1), (6, 8)), c = id }
+	let x = x{ a = 8, b.1 = x.b.1{ 0 = 0 }, b.0.0 = 0 }
+	// x = X { a = 8, b = ((0, 1), (0,8)), c = id }
+
+	x.a + x.b.0.0 + x.b.0.1 + x.b.1.0 + x.b.1.1
+
+
+data X {
+	a : Int
+	b : ((Int, Int), (Int, Int))
+	c : \Int -> Int
+}
+
+let id (x : Int) : Int
+	x

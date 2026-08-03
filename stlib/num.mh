@@ -1,0 +1,50 @@
+// TODO Handle counting backwards
+mod IntFns for Int
+	// TODO Better names? iterToIncl and iterToExcl?
+	let iterTo (x : Int, to : Int) : Iter[Int] -> _iter[Int](x, to, \x,y -> x>y, \x -> x+1)
+	let iterUpTo (x : Int, to : Int) : Iter[Int] -> _iter[Int](x, to, \x,y -> x>=y, \x -> x+1)
+	let countFrom (x : I32) : InfIter[Int] -> _countFrom[Int](x, \x -> x+1)
+	let min (x : Int, y : Int) : Int -> if x < y then x else y
+	let max (x : Int, y : Int) : Int -> if x > y then x else y
+	let abs (x : Int) : Int -> if x < 0 then x.neg() else x
+	let noOp + (x : Int) : Int -> x
+	let isEven (x : Int) : Bool -> x % 2 == 0
+	let isOdd (x : Int) : Bool -> x % 2 != 0
+
+// TODO Handle counting backwards
+mod I32Fns for I32
+	let iterTo (x : I32, to : I32) : Iter[I32] -> _iter[I32](x, to, \x,y -> x>y, \x -> x+1)
+	let iterUpTo (x : I32, to : I32) : Iter[I32] -> _iter[I32](x, to, \x,y -> x>=y, \x -> x+1)
+	let countFrom (x : I32) : InfIter[I32] -> _countFrom[I32](x, \x -> x+1)
+	let min (x : I32, y : I32) : I32 -> if x < y then x else y
+	let max (x : I32, y : I32) : I32 -> if x > y then x else y
+	let abs (x : I32) : I32 -> if x < 0 then x.neg() else x
+	let noOp + (x : I32) : I32 -> x
+	let isEven (x : I32) : Bool -> x % 2 == 0
+	let isOdd (x : I32) : Bool -> x % 2 != 0
+
+let _iter [A] (x : A, to : A, term : \A, A -> Bool, inc : \A -> A) : Iter[A]
+	if term(x, to)
+		End
+	else
+		Next(x, \ -> _iter[A](inc(x), to, term, inc))
+
+
+let _countFrom [A] (x : A, inc : \A -> A) : InfIter[A]
+	Next(x, \ -> _countFrom[A](inc(x), inc))
+
+
+mod RealFns for Real
+	let min (x : Real, y : Real) : Real -> if x < y then x else y
+	let max (x : Real, y : Real) : Real -> if x > y then x else y
+	let abs (x : Real) : Real -> if x < 0.0 then x.neg() else x
+	let noOp + (x : Real) : Real -> x
+
+
+
+data Zero
+data Succ [A]
+type One = Succ[Zero]
+type Two = Succ $ Succ[Zero]
+type Three = Succ $ Succ $ Succ[Zero]
+type Four = Succ $ Succ $ Succ $ Succ[Zero]

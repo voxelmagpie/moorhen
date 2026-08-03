@@ -1,0 +1,13 @@
+//11
+let main () : Real
+	let mut x = 1.0
+	let inc ()
+		set x = x + 1.0
+	inc()
+	let y =
+		let mut y = x
+		set y = y * 2.0
+		inc()
+		y
+	set x = x + y
+	x+y

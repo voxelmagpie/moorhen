@@ -1,0 +1,8 @@
+out
+dist-newstyle
+*.prof
+*.hp
+*.ps
+*.eventlog
+*.eventlog.html
+*.aux

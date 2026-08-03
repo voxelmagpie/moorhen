@@ -1,0 +1,36 @@
+{
+  "name": "moorhen-highlighting",
+  "displayName": "Moorhen Syntax Highlighting",
+  "description": "Syntax highlighting for the Moorhen language",
+  "publisher": "VoxelMagpie",
+  "version": "0.1.0",
+  "license": "MPL-2.0",
+  "engines": {
+    "vscode": "^1.72.2"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "moorhen",
+        "aliases": [
+          "Moorhen",
+          "moorhen"
+        ],
+        "extensions": [
+          ".mh"
+        ],
+        "configuration": "./language-configuration.moorhen.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "moorhen",
+        "scopeName": "source.moorhen",
+        "path": "./syntaxes/moorhen.tmLanguage.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+//":/"
+
+let main () : String
+	f(4,5)
+
+let f (x : Int, y : Int) : String
+	if x > 3 and y > 3
+		if x > 5 or y > 5 then ":)" else ":/"
+	else
+		":("

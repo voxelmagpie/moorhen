@@ -1,0 +1,9 @@
+//4
+
+let main () : Int
+	let mut x = 0
+	loop
+		set x = x + 1
+		if x > 3 then break else continue
+		set x = 999
+	x

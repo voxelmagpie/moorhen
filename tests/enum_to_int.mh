@@ -1,0 +1,6 @@
+//1
+
+data X = A | B | C
+
+let main () : I32
+	(B : X) as I32

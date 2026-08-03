@@ -1,0 +1,8 @@
+Lexer: Src -> Tokens (Newline, Indent(tabs))
+Lexer post-process: Tokens (Indent, Newline, Outdent)
+Parser: Tokens -> AST
+Macro expander: AST -> AST
+Type checker : AST -> HIR
+HIR->MIR
+Optimiser: MIR -> MIR
+MIR->JS

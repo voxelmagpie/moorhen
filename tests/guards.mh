@@ -1,0 +1,10 @@
+//3
+
+let main () : Int
+	let x : X = B(3)
+	match x
+		A -> 0
+		B(x) | x > 100 -> 0
+		B(x) -> x
+
+data X = A | B (Int)

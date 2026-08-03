@@ -1,0 +1,11 @@
+The optimiser is composed of two modifying passes and 1 analysis pass:
+Modifying:
+	Constant folding + inlining
+	Renaming
+Analysis: Weight
+
+These passes run on a given expression rather than the entire MIR.
+
+The renaming pass is run on an expression before it is inlined to prevent name conflicts.
+The weight analysis pass is used to decide whether to inline a function call or not.
+

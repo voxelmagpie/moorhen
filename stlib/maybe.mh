@@ -1,0 +1,22 @@
+data Maybe [A] = None | Some(A)
+
+mod MaybeFns [A] for Maybe[A]
+	let isSome (x : Maybe[A]) : Bool
+		match x
+			Some(_) -> true
+			None -> false
+
+	let isNone (x : Maybe[A]) : Bool
+		match x
+			Some(_) -> false
+			None -> true
+
+	let orPanic (x : Maybe[A]) : A
+		match x
+			Some(x) -> x
+			None -> panic("Maybe is None")
+
+	let map [B, @E] (x : Maybe[A], f : \A -> B @E) : Maybe[B] @E
+		match x
+			None -> None
+			Some(x) -> Some(f(x))

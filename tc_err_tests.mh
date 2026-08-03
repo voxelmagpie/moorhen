@@ -1,0 +1,312 @@
+// Literal type mismatch
+let x : Bool = 12.0
+
+// --- //
+
+// Function return type mismatch with literal
+let f : \Int -> Int = \x -> 12.1
+
+// --- //
+
+// Function parameter type annotation mismatch
+let f : \Int -> Int = \x : Real -> 1
+
+// --- //
+
+// Tuple field access out of bounds
+let f : \(Int, Int) -> Int = \x -> x.3
+
+// --- //
+
+// Arity mismatch: expected 1 param, got 2
+let f : \Int -> Int = \(x, y) -> x
+
+// --- //
+
+// Record constructor arg type mismatch
+data X (Int)
+let f : \ -> X = \ -> X(1.1)
+
+// --- //
+
+// Record constructor arity mismatch: expected 1, got 2
+data X (Int)
+let f : \ -> X = \ -> X(1, 2)
+
+// --- //
+
+// Record field name doesn't exist
+data X { a : Int }
+let f : \ -> X = \ -> X{ b = 3 }
+
+// --- //
+
+// Record missing required field
+data X { a : Int, b : Int }
+let f : \ -> X = \ -> X{ b = 3 }
+
+// --- //
+
+// Unbound variable
+let f : \ -> Int = \ -> a
+
+// --- //
+
+// Unbound variable in let binding
+let f : \ -> Int =
+	\ ->
+		let x = 3
+		y
+
+// --- //
+
+// Member function doesn't exist
+let f : \Int -> Int = \ -> x.noSuchMemberFn()
+
+// --- //
+
+// Member function arity mismatch: too many args
+let f : \Int -> Int = \ -> x.max(3,4,5)
+
+// --- //
+
+// Member function arity mismatch: too few args
+let f : \Int -> Int = \ -> x.max()
+
+// --- //
+
+// Member function arg type mismatch
+let f : \Int -> Int = \ -> x.max(false)
+
+// --- //
+
+// Import path doesn't exist
+import "what" (..)
+
+// --- //
+
+// Invalid builtin module path
+import "#builtins/zzz" (..)
+
+// --- //
+
+// Invalid builtin namespace
+import "#zzz/zzz" (..)
+
+// --- //
+
+// break outside of loop
+let f : \Int -> Int = \ -> break
+
+// --- //
+
+// break outside of loop (in block)
+let f : \Int -> Int = \ -> { break }
+
+// --- //
+
+// Function application: wrong number of args (too many)
+let f : \Int -> Int = \x -> x + 1
+let g : \ -> Int = \ -> f(1, 2)
+
+// --- //
+
+// Function application: wrong number of args (too few)
+let f : \(Int, Int) -> Int = \x, y -> x + y
+let g : \ -> Int = \ -> f(1)
+
+// --- //
+
+// Operator type mismatch: Bool + Int
+let f : \ -> Int = \ -> true + 5
+
+// --- //
+
+// Operator type mismatch: Int - Bool
+let f : \ -> Int = \ -> 10 - false
+
+// --- //
+
+// Logical operator with non-Bool operands
+let f : \ -> Bool = \ -> 5 and true
+
+// --- //
+
+// Comparison between incompatible types
+let f : \ -> Bool = \ -> "hello" > 42
+
+// --- //
+
+// Case expression branches have different return types
+data Option [A] = None | Some(A)
+let f : \ -> Int =
+	\ ->
+		match Some(5)
+			Some(x) -> x
+			None -> "error"
+
+// --- //
+
+// Missing match in exhaustive pattern match
+data Color = Red | Green | Blue
+let f : \Color -> Int =
+	\x ->
+		match x
+			Red -> 1
+			Green -> 2
+			Blue -> "" // TODO Remove this line when exhaustiveness checking is implemented
+
+
+// --- //
+
+// If-then-else branch type mismatch
+let f : \ -> Int = \ -> if true then 5 else "no"
+
+// --- //
+
+// List element type mismatch
+let x : Vec[Int] = [1, 2, 3.5]
+
+// --- //
+
+// Generic function called with wrong type
+let id [A] : \A -> A = \x -> x
+let g : \ -> Int = \ -> id(true)
+
+// --- //
+
+// Recursive type error in function definition
+let f : \Int -> Bool = \x -> f(x) + 1
+
+// --- //
+
+// Type variable constraint violation
+let f [A] : \A -> Int = \x -> x + 1
+
+// --- //
+
+// Higher-order function arg type mismatch
+let apply : \(\Int -> Int), Int -> Int = \f, x -> f(x)
+let f : \ -> Int = \ -> apply(\x -> x + "string", 5)
+
+// --- //
+
+// Return type annotation mismatch in nested function
+let outer : \ -> Int =
+	\ ->
+		let inner : \ -> Bool = \ -> 42
+		inner()
+
+
+// --- //
+
+// Type mismatch in function composition
+let f : \Int -> Int = \x -> x + 1
+let g : \Bool -> Bool = \x -> x.not()
+let h : \ -> Int = \ -> g(f(5))
+
+// --- //
+
+// Ambiguous operator
+
+data X (Int)
+
+mod XFns for X
+	let f + : \X -> Int = \x -> x.0
+	let g + : \X -> Int = \x -> x.0
+
+let f : \Int -> Int = \x -> +X(x)
+
+// --- //
+
+// Implicit cast enum to int
+
+data X = A | B | C
+
+let f : \X -> Int = \x -> x
+
+// --- //
+
+trait X [A]
+	let f : A
+
+mod Y for Int : X[Int], X[Real]
+	let f = 0
+
+// --- //
+
+trait X
+	let f : Int
+
+trait Y
+	let f : Int
+
+mod Z for Int : X,Y
+	let f = 0
+
+// --- //
+
+trait X
+	let f + : \ Self, Self -> Self
+
+mod Z for String : X
+	// Operator is wrong
+	let f - (x, y)
+		x+y
+
+// --- //
+
+trait X
+	let f : \ Self, Self -> Self
+
+mod Z for Int : X
+	// Types are redundant
+	let f (x : Int, y : Int)
+		x+y
+
+// --- //
+
+trait X
+	let f : \ Self, Self -> Self
+
+mod Z for Int // Missing trait
+	let f (x, y)
+		x+y
+
+// --- //
+
+trait X
+	let f : \ Self, Self -> Self
+
+mod Z for Int : X
+	let x : Int = 0
+	// Missing f
+
+// --- //
+
+let f [A] (x : A, y : A) : Bool where A : Eq
+	x == y
+
+let g () : Bool
+	f(X(0), X(0)) // Does not implement Eq
+
+data X (Int)
+
+// --- //
+
+let f [A] (x : A, y : A) : Bool where A : Eq
+	x == y
+
+let g : \ X, X -> Bool = f[X]
+
+data X (Int)
+
+// --- //
+
+trait Trait [A] where A : Eq
+	let f : A
+
+mod X for Int : Trait[Y]
+	let f = Y(1)
+
+data Y (Int)

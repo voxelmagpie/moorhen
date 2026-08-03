@@ -1,0 +1,15 @@
+//6.0
+
+data X [A] = X(A, A)
+
+mod Xmod [A] for X[A]
+	let f [B] (x : X[A], f : \A -> B) : B
+		f(x.0)
+
+let main () : String
+	let x = X[Real](3.0, 1.0)
+	let x =
+		x.f(
+			\x -> x*2.0
+		)
+	x.show()

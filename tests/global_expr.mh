@@ -1,0 +1,16 @@
+//"aaa"
+
+let f (i : Int) : String
+	let mut s = ""
+	let mut l = 0
+	loop
+		if l >= i
+			break
+		set s = s ++ "a"
+		set l = l + 1
+	s
+
+let x : String = f(3)
+
+let main () : String
+	x

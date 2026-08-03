@@ -1,0 +1,57 @@
+import "maybe" (..)
+import "iter" (..)
+
+// This is a strict version of the Iter type
+// The Int is the number of elements remaining (not counting the value stored in the Head)
+data Stack [A] = Empty | Head(A, Int, Stack[A])
+
+let singleton [A] (x : A) : Stack[A]
+	Head(x, 0, Empty)
+
+
+mod StackFns [A] for Stack[A]
+	let push (xs : Stack[A], x : A) : Stack[A]
+		Head(x, xs.length(), xs)
+
+	let head (x : Stack[A]) : Maybe[A]
+		match x
+			Empty -> None
+			Head(x, _, _) -> Some(x)
+
+	let tail (x : Stack[A]) : Stack[A]
+		match x
+			Empty -> Empty
+			Head(_, _, xs) -> xs
+
+	let length (x : Stack[A]) : Int
+		match x
+			Empty -> 0
+			Head(_, l, _) -> l + 1
+
+	let isEmpty (x : Stack[A]) : Bool
+		match x
+			Empty -> true
+			Head(_, _, _) -> false
+
+	let isNonEmpty (x : Stack[A]) : Bool
+		match x
+			Empty -> false
+			Head(_, _, _) -> true
+
+	// let ++ : \ Stack[A], Stack[A] -> Stack[A] =
+	//    \ xs, ys ->
+
+
+	let iter (xs : Stack[A]) : Iter[A]
+		match xs
+			Empty -> End
+			Head(x, _, xs) -> Next(x, \ -> xs.iter())
+
+	let atOrPanic (xs : Stack[A], i : Int) : A
+		match xs
+			Empty -> panic("Out of range")
+			Head(x, _, xs)
+				if i == 0
+					x
+				else
+					xs.atOrPanic(i - 1)

@@ -1,0 +1,92 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "moorhen",
+	"patterns": [
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#numbers"
+		},
+		{
+			"include": "#types"
+		},
+		{
+			"include": "#attributes"
+		},
+		{
+			"include": "#self"
+		}
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.other.moorhen",
+					"match": "\\b(import|as|set)\\b"
+				},
+				{
+					"name": "constant.language.moorhen",
+					"match": "\\b(true|false)\\b"
+				},
+				{
+					"name": "keyword.control.moorhen",
+					"match": "\\b(if|then|else|foreach|in|loop|break|continue|return|match|and|or|try|catch|throw|finally)\\b"
+				},
+				{
+					"name": "storage.type.moorhen",
+					"match": "\\b(trait|mod|for|where|let|mut|rec|type|builtin|data)\\b"
+				}
+			]
+		},
+		"strings": {
+			"name": "string.quoted.double.moorhen",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"include": "#string_char_common"
+				}
+			]
+		},
+		"string_char_common": {
+			"patterns": [
+				{
+					"name": "constant.character.escape.moorhen",
+					"match": "\\\\."
+				}
+			]
+		},
+		"comments": {
+			"name": "comment.line.moorhen",
+			"match": "//.*"
+		},
+		"numbers": {
+			"patterns": [
+				{
+					"match": "\\b-?[0-9]+(\\.[0-9]+)?\\b",
+					"name": "constant.numeric.moorhen"
+				},
+				{
+					"match": "\\b-?0(x|X)[0-9a-fA-F]+\\b",
+					"name": "constant.numeric.moorhen"
+				},
+				{
+					"match": "\\b-?0(b|B)[0-1]+\\b",
+					"name": "constant.numeric.moorhen"
+				}
+			]
+		},
+		"types": {
+			"name": "entity.name.type.moorhen",
+			"match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+		}
+	},
+	"scopeName": "source.moorhen"
+}

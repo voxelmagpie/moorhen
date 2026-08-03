@@ -1,0 +1,9 @@
+There are two types of names: type names (TName) and value names (VName).
+Type names include the names of modules and traits.
+
+Fully-qualified names have the form:
+#package-name/dir1/dir2/file:AModule.name
+
+The TFqn or VFqn type is used depending on whether the name at the end of the FQN is a TName or VName.
+
+PkgName contains the leading '#' character

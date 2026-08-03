@@ -1,0 +1,16 @@
+Usage: moorhen <mode> [options]
+
+Modes:
+  build <dir> <args>     Compiles the given Moorhen source file or package
+  check <dir> <args>     Checks the given Moorhen source file or package for 
+                         errors without building
+  help                   Shows this help text
+
+Options:
+  --out-dir <dir>        Destination directory for .mjs file, timings.txt, 
+                         compiler debug output, etc.
+  --builtins-path <dir>
+  --stlib-path <dir>
+  --timings              Output timings.txt file
+  --debug-ast
+  --debug-hir

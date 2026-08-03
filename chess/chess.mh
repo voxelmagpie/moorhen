@@ -1,0 +1,1077 @@
+// A (primitive) chess engine
+// This is made to work with the KDE Knights program and hasn't been tested with other software
+
+import "#stlib/num" (..)
+import "#stlib/maybe" (..)
+import "#stlib/vec" (..)
+import "#stlib/iter" (..)
+import "#stlib/stack" (..)
+import "#stlib/assert" (..)
+
+#deriving("Eq")
+data Piece = Pawn | Knight | Bishop | Rook | Queen | King
+
+mod PieceFns for Piece
+	let value (p : Piece) : Int
+		match p
+			Pawn -> 1
+			Knight -> 3
+			Bishop -> 3
+			Rook -> 5
+			Queen -> 9
+			King -> 12 // Relative value of check
+
+	let toSymbolLowerCase (p : Piece) : String
+		match p
+			Pawn -> "p"
+			Rook -> "r"
+			Knight -> "n"
+			Bishop -> "b"
+			Queen -> "q"
+			King -> "k"
+
+	let toSymbolUpperCase (p : Piece) : String
+		match p
+			Pawn -> "P"
+			Rook -> "R"
+			Knight -> "N"
+			Bishop -> "B"
+			Queen -> "Q"
+			King -> "K"
+
+let knightMoves : Vec[(Int, Int)] = [(2, -1), (2, 1), (1, 2), (-1, 2), (-2, 1), (-2, -1), (-1, -2), (1, -2)]
+
+#deriving("Eq")
+data Player = White | Black
+
+type BoardTile = Maybe[(Piece, Player)]
+type BoardRank = Vec[BoardTile]
+data Board (Vec[BoardRank])
+
+let loadBoard (s : String) : Board
+	let cpToPiece (c : CodePoint) : BoardTile
+		if c == "x".ord()
+			None
+		else
+			Some(
+				if c == "p".ord()
+					(Pawn, Black)
+				else if c == "r".ord()
+					(Rook, Black)
+				else if c == "n".ord()
+					(Knight, Black)
+				else if c == "b".ord()
+					(Bishop, Black)
+				else if c == "q".ord()
+					(Queen, Black)
+				else if c == "k".ord()
+					(King, Black)
+				else if c == "P".ord()
+					(Pawn, White)
+				else if c == "R".ord()
+					(Rook, White)
+				else if c == "N".ord()
+					(Knight, White)
+				else if c == "B".ord()
+					(Bishop, White)
+				else if c == "Q".ord()
+					(Queen, White)
+				else if c == "K".ord()
+					(King, White)
+				else
+					panic("")
+			)
+	let mkRank (s : String)
+		let r = s.iterCodePoints().filter(\c -> c != " ".ord()).take(8).map(cpToPiece).collect()
+		assert(r.length() == 8)
+
+		r
+
+	let b = s.lines().reverse().iter().take(8).map(mkRank).collect()
+	assert(b.length() == 8)
+
+	Board(b)
+
+
+let startingBoard : Board =
+	let rank1 : Vec[Piece] = [Rook, Knight, Bishop, Queen, King, Bishop, Knight, Rook]
+	let rank2 : Vec[Piece] = [Pawn, Pawn, Pawn, Pawn, Pawn, Pawn, Pawn, Pawn]
+	let emptyRank : BoardRank = [None, None, None, None, None, None, None, None]
+	let f (p : Piece, c : Player) : Maybe[(Piece, Player)] -> Some((p, c))
+	let fw (p : Piece) -> f(p, White)
+	let fb (p : Piece) -> f(p, Black)
+	Board(
+		[
+			rank1.iter().map(fw).collect()
+			rank2.iter().map(fw).collect()
+			emptyRank
+			emptyRank
+			emptyRank
+			emptyRank
+			rank2.iter().map(fb).collect()
+			rank1.iter().map(fb).collect()
+		]
+	)
+
+mod BoardFns for Board
+	let at (board : Board, tile : Tile) : BoardTile
+		board.at_(tile.file, tile.rank)
+
+	let at_ (board : Board, file : Int, rank : Int) : BoardTile
+		board.0.atOrPanic(rank).atOrPanic(file)
+
+	let setAt (board : Board, tile : Tile, x : BoardTile) : Board
+		board.setAt_(tile.file, tile.rank, x)
+
+	let setAt_ (board : Board, file : Int, rank : Int, x : BoardTile) : Board
+		Board(board.0.setAtOrPanic(rank, board.0.atOrPanic(rank).setAtOrPanic(file, x)))
+
+	let show (b : Board) : String
+		let showPiece (x : BoardTile)
+			match x
+				None -> "x"
+				Some((p, pl)) -> if pl == White then p.toSymbolUpperCase() else p.toSymbolLowerCase()
+
+		let showRank (r : BoardRank)
+			let x = r.iter().map(showPiece).fold(\ a, b -> a ++ b ++ " ", "") ++ "\n"
+			x
+
+		b.0.iterRev().map(showRank).fold(\ a, b -> a ++ b, "")
+
+	let getPiecesLists (b : Board) : (Vec[(Piece, Tile)], Vec[(Piece, Tile)])
+		let mut white : Stack[(Piece, Tile)] = Empty
+		let mut black : Stack[(Piece, Tile)] = Empty
+
+		let mut rankIdx = 0
+		foreach rank in b.0.iter()
+			let mut fileIdx = 0
+			foreach tileMaybe in rank.iter()
+				match tileMaybe
+					None -> ()
+					Some((piece, player))
+						let tile = Tile{rank=rankIdx, file=fileIdx}
+						match player
+							White
+								set white = white.push((piece, tile))
+
+							Black
+								set black = black.push((piece, tile))
+				set fileIdx = fileIdx + 1
+			set rankIdx = rankIdx + 1
+
+		(white.iter().collect(), black.iter().collect())
+
+
+#deriving("Eq")
+data Side = QueenSide | KingSide
+
+#deriving("Eq")
+data Tile { file : Int, rank : Int }
+
+mod TileFns for Tile
+	let isValid (tile : Tile) : Bool
+		tile.rank >= 0 and tile.rank < 8 and tile.file >= 0 and tile.file < 8
+
+#deriving("Eq")
+data CastlingRights { kingSide : Bool, queenSide : Bool }
+
+let noCastlingRights () : CastlingRights
+	CastlingRights { kingSide=false, queenSide=false }
+
+let fullCastlingRights () : CastlingRights
+	CastlingRights { kingSide=true, queenSide=true }
+
+mod CastlingRightsFns for CastlingRights
+	let noRights (cr : CastlingRights) : Bool
+		cr.kingSide.not() and cr.queenSide.not()
+
+	let partialRights (cr : CastlingRights) : Bool
+		cr.kingSide.not() or cr.queenSide.not()
+
+	let fullRights (cr : CastlingRights) : Bool
+		cr.kingSide and cr.queenSide
+
+data State {
+	board : Board
+	nextToPlay : Player
+	whiteHasCastled : Bool
+	blackHasCastled : Bool
+	whiteCastlingRights : CastlingRights
+	blackCastlingRights : CastlingRights
+	prevMove : Maybe[Move] // None if in starting position
+}
+
+
+let startingState : State =
+	let pieces1 : Vec[Piece] = [Rook, Knight, Bishop, Queen, King, Bishop, Knight, Rook]
+
+	State {
+		board = startingBoard
+		nextToPlay = White
+		whiteHasCastled = false
+		blackHasCastled = false
+		whiteCastlingRights = CastlingRights {kingSide=true, queenSide=true}
+		blackCastlingRights = CastlingRights {kingSide=true, queenSide=true}
+		prevMove = None
+	}
+
+data AnalysedState {
+	s : State
+	whitePieces : Vec[(Piece, Tile)]
+	blackPieces : Vec[(Piece, Tile)]
+	// Threats includes threats against the empty squares inbetween the king and rooks
+	threatsFromBlack : Vec[(Tile, Tile)]
+	whiteInCheck : Bool
+	whiteDefences : Vec[(Tile, Tile)]
+	threatsFromWhite : Vec[(Tile, Tile)]
+	blackInCheck : Bool
+	blackDefences : Vec[(Tile, Tile)]
+}
+
+let startingAnalysedState : AnalysedState =
+	let s = startingState
+	let (whitePieces, blackPieces) = s.board.getPiecesLists()
+
+	AnalysedState {
+		s
+		whitePieces
+		blackPieces
+		threatsFromBlack = []
+		whiteInCheck = false
+		whiteDefences = []
+		threatsFromWhite = []
+		blackInCheck = false
+		blackDefences = []
+	}
+
+#deriving("Eq")
+data Move = Move (Tile, Tile, Piece) | CastleMove(Player, Side)
+
+mod MoveFns for Move
+	// Takes the board state that the move is being applied to
+	let toUci (move : Move, board : Board) : String
+		match move
+			Move(from, to, promoteTo)
+				let ff = CodePoint(from.file as I32 + "a".ord().0).show()
+				let fr = CodePoint(from.rank as I32 + "1".ord().0).show()
+				let tf = CodePoint(to.file as I32 + "a".ord().0).show()
+				let tr = CodePoint(to.rank as I32 + "1".ord().0).show()
+				let p = board.at(from).orPanic().0
+				let p = if p == promoteTo then "" else promoteTo.toSymbolLowerCase()
+				ff ++ fr ++ tf ++ tr ++ p
+			CastleMove(player, side)
+				let oldKingTile = Tile{rank = if player == White then 0 else 7, file = 4}
+				let newKingTile = oldKingTile { file = if side == KingSide then 6 else 2 }
+				Move(oldKingTile, newKingTile, King).toUci(board)
+
+#deriving("Eq")
+data Threat {
+	attacker : Tile
+	defender : Tile
+	isCheck : Bool // Defender is king
+}
+
+mod StateFns for State
+	let applyMove (s : State, m : Move) : State
+		let mut board = s.board
+		let player = s.nextToPlay
+		let mut whiteHasCastled = s.whiteHasCastled
+		let mut blackHasCastled = s.blackHasCastled
+		let mut whiteCastlingRights = s.whiteCastlingRights
+		let mut blackCastlingRights = s.blackCastlingRights
+		match m
+			Move(from, to, toPiece)
+				// Pieces involved
+				let movedPiece = s.board.at(from).orPanic().0
+				let wasThere = s.board.at(to)
+
+				// Check if rooks have moved or been taken
+				let qw = Tile{rank=0, file=0}
+				let kw = Tile{rank=0, file=7}
+				let qb = Tile{rank=7, file=0}
+				let kb = Tile{rank=7, file=7}
+				if from == qw or to == qw
+					set whiteCastlingRights = CastlingRights{queenSide=false, kingSide=whiteCastlingRights.kingSide}
+				if from == kw or to == kw
+					set whiteCastlingRights = CastlingRights{queenSide=whiteCastlingRights.queenSide, kingSide=false}
+				if from == qb or to == qb
+					set blackCastlingRights = CastlingRights{queenSide=false, kingSide=blackCastlingRights.kingSide}
+				if from == kb or to == kb
+					set blackCastlingRights = CastlingRights{queenSide=blackCastlingRights.queenSide, kingSide=false}
+
+				// Check if king has been moved
+				if movedPiece == King
+					if player == White
+						set whiteCastlingRights = CastlingRights{queenSide=false, kingSide=false}
+					else
+						set blackCastlingRights = CastlingRights{queenSide=false, kingSide=false}
+
+				// Check if this is en passant
+				if toPiece == Pawn and from.file != to.file and wasThere.isNone()
+					set board = board.setAt(Tile { file = to.file, rank = from.rank }, None)
+
+				// Update board
+				set board = board.setAt(from, None)
+				set board = board.setAt(to, Some((toPiece, player)))
+			CastleMove(castlingPlayer, side)
+				let rank = if castlingPlayer == White then 0 else 7
+				let oldRookTile = Tile{file = if side == QueenSide then 0 else 7,rank}
+				let newRookTile = Tile{file = if side == KingSide then 5 else 3, rank}
+				let newKingTile = Tile{file = if side == KingSide then 6 else 2, rank}
+				if castlingPlayer == White
+					set whiteCastlingRights = CastlingRights{queenSide=false, kingSide=false}
+					set whiteHasCastled = true
+				else
+					set blackCastlingRights = CastlingRights{queenSide=false, kingSide=false}
+					set blackHasCastled = true
+				set board = board.setAt(newRookTile, Some((Rook, castlingPlayer)))
+				set board = board.setAt(oldRookTile, None)
+				set board = board.setAt(newKingTile, Some((King, castlingPlayer)))
+				set board = board.setAt(Tile{file=4,rank}, None)
+
+		State {
+			board
+			nextToPlay = if player == White then Black else White
+			whiteHasCastled
+			blackHasCastled
+			whiteCastlingRights = whiteCastlingRights
+			blackCastlingRights = blackCastlingRights
+			prevMove = Some(m)
+		}
+
+	let analyse (s : State) : AnalysedState
+		let scanForThreats (ps : Vec[(Piece,Tile)], us : Player, them : Player, attackDir : Int)
+			let mut threats : Stack[(Tile, Tile)] = Empty
+			let mut defences : Stack[(Tile, Tile)] = Empty
+			let mut threateningKing = false
+
+			let addThreat (from : Tile, to : Tile)
+				if to.isValid()
+					match s.board.at(to)
+						Some((piece,player))
+							if player == them
+								set threats = threats.push((from, to))
+								if piece == King
+									set threateningKing = true
+							else
+								set defences = defences.push((from, to))
+						_
+							set threats = threats.push((from, to))
+
+
+			let findThreatsInLine (board : Board, tile : Tile, fileOffset : Int, rankOffset : Int, isKing : Bool)
+				let mut file = tile.file + fileOffset
+				let mut rank = tile.rank + rankOffset
+
+				loop
+					let tile2 = Tile{ rank, file }
+					if tile2.isValid().not()
+						break
+					addThreat(tile, tile2)
+					if isKing or board.at(tile2).isSome()
+						break
+					set file = file + fileOffset
+					set rank = rank + rankOffset
+
+			foreach (p, tile) in ps.iter()
+				match p
+					Pawn
+						addThreat(tile, Tile{ file = tile.file+1, rank = tile.rank+attackDir })
+						addThreat(tile, Tile{ file = tile.file-1, rank = tile.rank+attackDir })
+						// I can't be bothered to check for en passant
+						// If depth > 1 then it will see the move coming
+						// And you can't en passant the king so it won't cause invalid moves either
+					Knight
+						foreach (r,f) in knightMoves.iter()
+							addThreat(tile, Tile { rank = tile.rank + r, file = tile.file + f })
+					Bishop
+						findThreatsInLine(s.board, tile, -1, -1, false)
+						findThreatsInLine(s.board, tile, -1, 1, false)
+						findThreatsInLine(s.board, tile, 1, -1, false)
+						findThreatsInLine(s.board, tile, 1, 1, false)
+					Rook
+						findThreatsInLine(s.board, tile, -1, 0, false)
+						findThreatsInLine(s.board, tile, 0, -1, false)
+						findThreatsInLine(s.board, tile, 0, 1, false)
+						findThreatsInLine(s.board, tile, 1, 0, false)
+					Queen
+						foreach i in (-1).iterTo(1)
+							foreach j in (-1).iterTo(1)
+								if i != 0 or j != 0
+									findThreatsInLine(s.board, tile, i, j, false)
+					King
+						foreach i in (-1).iterTo(1)
+							foreach j in (-1).iterTo(1)
+								if i != 0 or j != 0
+									findThreatsInLine(s.board, tile, i, j, true)
+
+			(threats.iter().collect(), threateningKing, defences.iter().collect())
+
+		let (whitePieces, blackPieces) = s.board.getPiecesLists()
+
+		let (threatsFromWhite, blackInCheck, whiteDefences) = scanForThreats(whitePieces, White, Black, 1)
+		let (threatsFromBlack, whiteInCheck, blackDefences) = scanForThreats(blackPieces, Black, White, -1)
+
+		AnalysedState {
+			s,
+			whitePieces
+			blackPieces
+			threatsFromBlack
+			whiteInCheck
+			whiteDefences
+			threatsFromWhite
+			blackInCheck
+			blackDefences
+		}
+
+mod AnalysedStateFns for AnalysedState
+	// Finds all possible moves for the next player to move, including moves that put the player in check
+	let findPseudoLegalMoves (state : AnalysedState) : Stack[Move]
+		let mut moves : Stack[Move] = Empty
+
+		// Castling
+		if (if state.s.nextToPlay == White then state.whiteInCheck else state.blackInCheck).not()
+			let b = state.s.board
+			let homeRankIdx = if state.s.nextToPlay == White then 0 else 7
+
+			let castlingRights =
+				if state.s.nextToPlay == White then state.s.whiteCastlingRights else state.s.blackCastlingRights
+
+			let threats = if state.s.nextToPlay == White then state.threatsFromBlack else state.threatsFromWhite
+
+			let emptySquareOk (file : Int)
+				let isEmpty = b.at_(file, homeRankIdx).isNone()
+				isEmpty and threats.iter().filter(\(_, to) -> to.rank == homeRankIdx and to.file == file).isEnd()
+
+			let queenSideRights =
+				castlingRights.queenSide and b.at_(1, homeRankIdx).isNone() and emptySquareOk(2) and emptySquareOk(3)
+
+			let kingSideRights = castlingRights.kingSide and emptySquareOk(5) and emptySquareOk(6)
+
+			if queenSideRights
+				set moves = moves.push(CastleMove(state.s.nextToPlay, QueenSide))
+
+			if kingSideRights
+				set moves = moves.push(CastleMove(state.s.nextToPlay, KingSide))
+
+
+		// Other moves
+
+		let takeOrOccupy (oldTile : Tile, newTile : Tile)
+			if newTile.isValid()
+				match state.s.board.at(newTile)
+					Some((_, player))
+						if player != state.s.nextToPlay
+							set moves = moves.push(Move(oldTile, newTile, state.s.board.at(oldTile).orPanic().0))
+					_
+						set moves = moves.push(Move(oldTile, newTile, state.s.board.at(oldTile).orPanic().0))
+
+		let occupy (oldTile : Tile, newTile : Tile, promoteTo : Piece)
+			if newTile.isValid() and state.s.board.at(newTile).isNone()
+				set moves = moves.push(Move(oldTile, newTile, promoteTo))
+
+		let take (oldTile : Tile, newTile : Tile, promoteTo : Piece)
+			if newTile.isValid()
+				match state.s.board.at(newTile)
+					Some((_, player))
+						if player != state.s.nextToPlay
+							set moves = moves.push(Move(oldTile, newTile, promoteTo))
+					_ -> ()
+
+		let findMovesInLine (tile : Tile, fileOffset : Int, rankOffset : Int, isKing : Bool)
+			let mut file = tile.file + fileOffset
+			let mut rank = tile.rank + rankOffset
+			loop
+				let tile2 = Tile{ rank, file }
+				if tile2.isValid().not()
+					break
+				takeOrOccupy(tile, tile2)
+				if isKing or state.s.board.at(tile2).isSome()
+					break
+				set file = file + fileOffset
+				set rank = rank + rankOffset
+
+		let pieces = if state.s.nextToPlay == White then state.whitePieces else state.blackPieces
+		foreach (pieceType, tile) in pieces.iter()
+			match pieceType
+				Pawn
+					let dir = if state.s.nextToPlay == White then 1 else -1
+					let startingRank = if state.s.nextToPlay == White then 1 else 6
+
+					let dst = Tile{ rank = tile.rank + dir, file = tile.file }
+
+					let moveAndMaybePromote (dst : Tile)
+						if dst.rank == 0 or dst.rank == 7
+							set moves = moves.push(Move(tile, dst, Knight))
+							set moves = moves.push(Move(tile, dst, Bishop))
+							set moves = moves.push(Move(tile, dst, Rook))
+							set moves = moves.push(Move(tile, dst, Queen))
+						else
+							set moves = moves.push(Move(tile, dst, Pawn))
+
+					if dst.isValid() and state.s.board.at(dst).isNone()
+						moveAndMaybePromote(dst)
+
+					if tile.rank == startingRank and state.s.board.at(dst).isNone()
+						let dst = Tile{ rank = tile.rank + dir*2, file = tile.file }
+						occupy(tile, dst, Pawn)
+
+					let takeAndMaybePromote (dst : Tile)
+						if dst.isValid()
+							match state.s.board.at(dst)
+								Some((_, player))
+									if player != state.s.nextToPlay
+										moveAndMaybePromote(dst)
+								_ -> ()
+
+					let dst = Tile{ rank = tile.rank + dir, file = tile.file + 1 }
+					takeAndMaybePromote(dst)
+
+					let dst = Tile{ rank = tile.rank + dir, file = tile.file - 1 }
+					takeAndMaybePromote(dst)
+
+					match state.s.prevMove
+						Some(Move(from, to, Pawn)) | (to.rank - from.rank).abs() > 1
+							if tile.file == to.file-1 or tile.file == to.file+1
+								if tile.rank == to.rank
+									let dir = (to.rank - from.rank) / 2
+									let enPassantRank = from.rank + dir
+									let enPassantTile = Tile { file = to.file, rank = enPassantRank }
+									set moves = moves.push(Move(tile, enPassantTile, Pawn))
+						_ -> ()
+					()
+				Knight
+					foreach (r, f) in knightMoves.iter()
+						let dst = Tile { rank = tile.rank + r, file = tile.file + f }
+						takeOrOccupy(tile, dst)
+				Bishop
+					findMovesInLine(tile, -1, -1, false)
+					findMovesInLine(tile, -1, 1, false)
+					findMovesInLine(tile, 1, -1, false)
+					findMovesInLine(tile, 1, 1, false)
+				Rook
+					findMovesInLine(tile, -1, 0, false)
+					findMovesInLine(tile, 0, -1, false)
+					findMovesInLine(tile, 0, 1, false)
+					findMovesInLine(tile, 1, 0, false)
+				Queen
+					foreach i in (-1).iterTo(1)
+						foreach j in (-1).iterTo(1)
+							if i != 0 or j != 0
+								findMovesInLine(tile, i, j, false)
+				King
+					foreach i in (-1).iterTo(1)
+						foreach j in (-1).iterTo(1)
+							if i != 0 or j != 0
+								findMovesInLine(tile, i, j, true)
+		moves
+
+	let isValid (s : AnalysedState) : Bool
+		!((s.s.nextToPlay == Black and s.whiteInCheck) or (s.s.nextToPlay == White and s.blackInCheck))
+
+	// Evaluates the current game state
+	// A higher value mean the board is in the engine's favour
+	let evaluate (s : AnalysedState, ourPlayerColour : Player, symmetric : Bool) : Maybe[Real]
+		if !s.isValid()
+			None
+		else
+			// Positioning & material
+			// Maps x from [0 -> 3.5 -> 7] to [0.525 -> 0.175 ->  0.525]
+			let evalCoordCentral (x : Int) -> (-(x : Real - 3.5).abs() + (3.5*0.5)) * 0.1
+			let evalCoordCentral2 (.{file,rank} : Tile) -> evalCoordCentral(file) + evalCoordCentral(rank)
+			let isCentre2 (x : Int) -> x == 3 or x == 4
+
+			let materialTotal =
+				s.blackPieces.iter().append(s.whitePieces.iter()).map(\(p, _) -> p.value()).fold(\x, y -> x+y, 0)
+			let isEndgame = materialTotal <= 50
+			let isEarlyGame = materialTotal >= 102-10
+
+			let evalPiece ((piece, tile@.{rank,file}) : (Piece, Tile), player : Player)
+				match piece
+					King
+						if isEndgame
+							evalCoordCentral2(tile)*0.5
+						else if file == 3 or file == 4 or rank == 3 or rank == 4
+							-1.0
+						else
+							0
+					Pawn
+						let r = if player == White then rank else -rank + 7
+						let weights : Vec[Int] = [0, 0, 1, 2, 5, 8, 12, 12]
+						let push = 0.05 * weights.atOrPanic(r)
+						let centreFiles = if file >= 2 and file <= 5 then 0.1 else 0.0
+						let centre4 = if isCentre2(file) and isCentre2(rank) then 0.5 else 0.0
+						push + centreFiles + centre4 + piece.value()
+					Rook
+						let r = if rank <= 2 or rank >= 5 then 0.1 else -0.1
+						let f = if file >= 1 and file <= 7 then 0.1 else -0.1
+						r + f + piece.value()
+					Queen
+						if isEarlyGame and (rank >= 2 and rank <= 5)
+							piece.value() : Real - 1
+						else
+							piece.value() : Real
+					_
+						evalCoordCentral2(tile) + piece.value()
+
+			let evalPieceBlockingCastle ((piece, tile@.{rank,file}) : (Piece, Tile), player : Player)
+				let homeRankIdx = if player == White then 0 else 7
+				let rights = if player == White then s.s.whiteCastlingRights else s.s.blackCastlingRights
+				let badFile =
+						(rights.kingSide and (file == 5 or file == 6)) or (rights.queenSide and (file >= 1 and file <= 3))
+				let badRank = rank == homeRankIdx
+				if badRank and badFile then -0.2 else 0.0
+
+			let evalPcs (ps : Vec[(Piece, Tile)], player : Player)
+					ps.iter().map(\x -> evalPiece(x, player) + evalPieceBlockingCastle(x, player)).fold(\ x, y -> x+y, 0)
+
+			let whitePcsScore = evalPcs(s.whitePieces, White)
+			let blackPcsScore = evalPcs(s.blackPieces, Black)
+
+			// Threats
+			let getThreatPenalty
+				(
+					threatsToUs : Vec[(Tile, Tile)]
+					threatsGiven : Vec[(Tile, Tile)]
+					defences : Vec[(Tile, Tile)]
+					ps : Vec[(Piece, Tile)]
+				)
+			->
+				let f ((piece, tile) : (Piece, Tile))
+					let defenders = defences.iter().filter(\(_from, to) -> to == tile).length()
+					let attackers = threatsToUs.iter().filter(\(_from, to) -> to == tile).length()
+					let undefended =
+						if defenders < attackers
+							true
+						else
+							// Check if attacker is lower value than piece under threat
+							let v = piece.value()
+							let f ((from, to) : (Tile, Tile))
+								if to == tile then s.s.board.at(from).orPanic().0.value() < v else false
+							threatsToUs.iter().filter(f).isEnd().not()
+					if undefended
+						0.9 * piece.value()
+					else
+						let f ((from, to) : (Tile, Tile))
+							if from == tile
+								match s.s.board.at(from)
+									None -> 0.005
+									Some((p, _)) -> -0.01 * p.value()
+							else
+								0
+						threatsGiven.iter().map(f).fold(\ x, y -> x+y, 0)
+				ps.iter().map(f).fold(\ x, y -> x+y, 0)
+
+
+			let (whiteThreatPenalty, blackThreatPenalty) =
+				if symmetric
+					(0.0, 0.0)
+				else
+					(
+						getThreatPenalty(s.threatsFromBlack, s.threatsFromWhite, s.whiteDefences, s.whitePieces)
+						getThreatPenalty(s.threatsFromWhite, s.threatsFromBlack, s.blackDefences, s.blackPieces)
+					)
+
+
+			// Castling rights
+			let getCastlingPenalty (castled : Bool, rights : CastlingRights)
+				if castled then 0.0 else if rights.noRights() then 3.0 else if rights.partialRights() then 1.0 else 0.0
+
+			let whiteCastlingPenalty = getCastlingPenalty(s.s.whiteHasCastled, s.s.whiteCastlingRights)
+			let blackCastlingPenalty = getCastlingPenalty(s.s.blackHasCastled, s.s.blackCastlingRights)
+
+			// Sum
+
+			if symmetric
+				let sum =
+					+
+						+whitePcsScore
+						-blackPcsScore
+						-whiteCastlingPenalty
+						+blackCastlingPenalty
+						// -whiteThreatPenalty
+						// +blackThreatPenalty
+
+				Some(sum * (if ourPlayerColour == White then 1 else -1))
+			else
+				let sum =
+					if ourPlayerColour == White
+						+
+							+whitePcsScore
+							-blackPcsScore * 0.98
+							-whiteCastlingPenalty
+							+blackCastlingPenalty * 0.7
+							-whiteThreatPenalty
+							+blackThreatPenalty * 0.05
+					else
+						+
+							+blackPcsScore
+							-whitePcsScore * 0.98
+							-blackCastlingPenalty
+							+whiteCastlingPenalty * 0.7
+							-blackThreatPenalty
+							+whiteThreatPenalty * 0.05
+				Some(sum)
+
+
+let charToRank (c : CodePoint) : Int
+	if c.0 >= "1".ord().0 and c.0 <= "8".ord().0
+		c.0 - "1".ord().0
+	else
+		panic("charToRank")
+
+let charToFile (c : CodePoint) : Int
+	if c.0 >= "a".ord().0 and c.0 <= "h".ord().0
+		c.0 - "a".ord().0
+	else
+		panic("charToFile")
+
+let parseUciMove (s : String, board : Board) : Move
+	let x : Maybe[CodePoint] = None
+	let it = s.iterCodePoints()
+	let (x, it) = it.next()
+	let fromFile = charToFile(x.orPanic())
+	let (x, it) = it.next()
+	let fromRank = charToRank(x.orPanic())
+	let from = Tile{file=fromFile,rank=fromRank}
+	let (x, it) = it.next()
+	let toFile = charToFile(x.orPanic())
+	let (x, it) = it.next()
+	let toRank = charToRank(x.orPanic())
+	let to = Tile{file=toFile,rank=toRank}
+	let (x, it) = it.next()
+	match x
+		Some(p)
+			let p : Piece =
+				if p == "p".ord()
+					Pawn
+				else if p == "r".ord()
+					Rook
+				else if p == "n".ord()
+					Knight
+				else if p == "b".ord()
+					Bishop
+				else if p == "q".ord()
+					Queen
+				else
+					panic("UCI Promote piece")
+
+			Move(from, to, p)
+		_
+			let (piece, player) = board.at(from).orPanic()
+			let isKing = piece == King
+			let isCastle = toFile - fromFile > 1 or toFile - fromFile < -1
+
+			if isKing and isCastle
+				CastleMove(player, if toFile > 4 then KingSide else QueenSide)
+			else
+				Move(from, to, piece)
+
+
+
+
+let randomIter (x : I32) : InfIter[I32]
+	Next(x, \ -> randomIter(x * 1103515245 + 12345))
+
+let jitter (r : I32, x : Real) : Real
+	x + (r.abs() : Real / 2147483647.0) * 0.5
+
+
+
+
+let pickAMove
+	(
+		gameState : AnalysedState
+		randomSeed : I32
+		depth : Int
+		enginePlayer : Player
+	)
+	: Maybe[(Move, AnalysedState, Real)]
+->
+	assert(depth > 0)
+
+	let evalMove (a : AnalysedState, m : Move) : Maybe[(Move, AnalysedState, Real)]
+		let a = a.s.applyMove(m).analyse()
+		a.evaluate(enginePlayer, depth > 1).map(\e -> (m, a, e))
+
+	let mut moveCount = 0
+	let mut rng = randomIter(randomSeed)
+
+	let rec go
+		(
+			gameState : AnalysedState
+			pickBest : Bool
+			curDepth : Int
+			best : Real
+			worst : Real
+		)
+		: Maybe[(Move, AnalysedState, Real)]
+		@MutatesVars['moveCount]
+	->
+		let mut chosenMove : Maybe[(Move, AnalysedState, Real)] = None
+		let mut chosenMoveEval = if pickBest then negInf else inf
+		let movesList = gameState.findPseudoLegalMoves()
+		let mut best = best
+		let mut worst = worst
+
+		foreach (i, (m,a,e)) in movesList.iter().enum().mapMaybe(\(i, m) -> evalMove(gameState, m).map(\x -> (i, x)))
+			set moveCount = moveCount + 1
+
+			let e =
+				if curDepth < depth
+					let m = go(a, !pickBest, curDepth + 1, best, worst)
+					match m
+						Some((m, _, e))
+							e
+						None
+							if (enginePlayer == White and a.blackInCheck) or (enginePlayer == Black and a.whiteInCheck)
+								if pickBest then 99 else -99
+							else if (enginePlayer == Black and a.blackInCheck) or (enginePlayer == White and a.whiteInCheck)
+								if pickBest then -99 else 99
+							else
+								0
+				else
+					let (r, rng2) = rng.next()
+					set rng = rng2
+					e + jitter(r.orPanic(), e)
+
+			if (pickBest and e > chosenMoveEval) or (!pickBest and e < chosenMoveEval)
+				set chosenMove = Some((m, a, e))
+				set chosenMoveEval = e
+
+				if pickBest and chosenMoveEval > best
+					set best = chosenMoveEval
+
+				if !pickBest and chosenMoveEval < worst
+					set worst = chosenMoveEval
+
+			if (pickBest and e >= worst) or (!pickBest and e <= best)
+				break
+
+
+
+		chosenMove
+
+
+
+	let moves = gameState.findPseudoLegalMoves().iter().mapMaybe(\m -> evalMove(gameState, m)).collect()
+
+	let moves = moves.sort(\ (_,_,y), (_,_,x) -> if x < y then OrdLt else if x == y then OrdEq else OrdGt)
+
+	let mut chosenMove : Maybe[(Move, AnalysedState, Real)] = None
+	let mut best = negInf
+
+	foreach (i, (m, a, e)) in moves.iter().enum()
+		set moveCount = moveCount + 1
+
+		let e =
+			if depth > 1
+				let m = go(a, false, 2, best, inf)
+				match m
+					Some((m, _, e))
+						e
+					None
+						if (enginePlayer == White and a.blackInCheck) or (enginePlayer == Black and a.whiteInCheck)
+							99
+						else if (enginePlayer == Black and a.blackInCheck) or (enginePlayer == White and a.whiteInCheck)
+							-99
+						else
+							0
+			else
+				let (r, rng2) = rng.next()
+				set rng = rng2
+				e + jitter(r.orPanic(), e)
+
+		if e > best
+			set chosenMove = Some((m, a, e))
+			set best = e
+
+
+
+	dbg $ "Examined " ++ moveCount.show() ++ " moves"
+	chosenMove
+
+
+let perft (a : AnalysedState, depth : Int, curDepth : Int) : Int
+	let moves = a.findPseudoLegalMoves()
+	let mut count = 0 as Int
+
+	foreach m in moves.iter()
+		let s = m.toUci(a.s.board)
+		let a = a.s.applyMove(m).analyse()
+		if a.isValid()
+			if depth == 1
+				dbg(s)
+			if curDepth == depth
+				set count = count + 1
+			if curDepth < depth
+				let n = perft(a, depth, curDepth + 1)
+				if curDepth == 1
+					dbg(s ++ ": " ++ n.show())
+				set count = count + n
+
+	count
+
+
+let parseFen (s : String) : State
+	let fields = s.words()
+	assert $ fields.length() >= 3
+
+	let parseRank (s : String) : BoardRank
+		let mut piecesRev : Stack[BoardTile] = Empty
+		foreach c in s.iterCodePoints()
+			if c.0 >= "0".ord().0 and c.0 <= "9".ord().0
+				foreach _ in 0.iterUpTo(c.0 - "0".ord().0)
+					set piecesRev = piecesRev.push(None)
+			else
+				let player : Player = if c.0 < "a".ord().0 then White else Black
+				let c = CodePoint $ c.0.bOr(32)
+				if c == "p".ord()
+					set piecesRev = piecesRev.push(Some((Pawn, player)))
+				else if c == "n".ord()
+					set piecesRev = piecesRev.push(Some((Knight, player)))
+				else if c == "b".ord()
+					set piecesRev = piecesRev.push(Some((Bishop, player)))
+				else if c == "r".ord()
+					set piecesRev = piecesRev.push(Some((Rook, player)))
+				else if c == "q".ord()
+					set piecesRev = piecesRev.push(Some((Queen, player)))
+				else if c == "k".ord()
+					set piecesRev = piecesRev.push(Some((King, player)))
+				else
+					panic("FEN piece")
+
+		piecesRev.iter().reverse().collect()
+
+	let board = Board $ fields.atOrPanic(0).split("/").iter().map(parseRank).collect().reverse()
+
+	let nextToPlay = fields.atOrPanic(1)
+	let nextToPlay : Player =
+		if nextToPlay == "w" then White else if nextToPlay == "b" then Black else panic("FEN active player")
+
+	let cRights = fields.atOrPanic(2)
+	let (whiteCastlingRights, blackCastlingRights) =
+		if cRights == "-"
+			(noCastlingRights(), noCastlingRights())
+		else
+			(
+				CastlingRights { kingSide = cRights.contains("K"), queenSide = cRights.contains("Q") }
+				CastlingRights { kingSide = cRights.contains("k"), queenSide = cRights.contains("q") }
+			)
+
+	let prevMove : Maybe[Move] =
+		if fields.length() < 4 or fields.atOrPanic(3) == "-"
+			None
+		else
+			let s = fields.atOrPanic(3).iterCodePoints()
+			let (file, s) = s.next()
+			let file = file.orPanic()
+			let (rank, s) = s.next()
+			let rank = rank.orPanic()
+			assert $ s.isEnd()
+			assert $ file.0 >= "a".ord().0 and file.0 <= "h".ord().0
+			assert $ rank.0 >= "1".ord().0 and rank.0 <= "8".ord().0
+			let file = file.0 - "a".ord().0
+			let rank = rank.0 - "1".ord().0
+
+			if rank == 2
+				let from = Tile{ rank = 1 , file }
+				let to = Tile{ rank = 3, file }
+				Some $ Move(from, to, Pawn)
+			else if rank == 5
+				let from = Tile{ rank = 6 , file }
+				let to = Tile{ rank = 4, file }
+				Some $ Move(from, to, Pawn)
+			else
+				panic("FEN rank")
+
+	State {
+		board
+		nextToPlay
+		whiteHasCastled=true // This is wrong but it only affects evaluation and parseFen isn't used if playing so ...
+		blackHasCastled=true
+		whiteCastlingRights
+		blackCastlingRights
+		prevMove // This is also wrong unless the previous move was moving a pawn 2 tiles
+	}
+
+let dbgFromFen (fen : String) @Impure
+	let gameState = parseFen(fen).analyse()
+	dbg(gameState.s.board.show())
+
+	match pickAMove(gameState, randomI32(), 3, gameState.s.nextToPlay)
+		Some((Move(from, to, p), _, _))
+			dbg("Move:")
+			dbg(from)
+			dbg(to)
+			dbg(p)
+		Some((CastleMove(_, _), _, _))
+			dbg("Castling move")
+		None
+			dbg("No moves")
+
+
+let main () : () @Async
+	dbg("Listening...")
+	let mut gameState = startingAnalysedState
+	let mut gameStateUciString = "position startpos"
+
+	loop
+		let l = readLine()
+		if l == "quit"
+			break
+		else if l == "" or l.startsWith("debug ") or l == "ucinewgame" or l.startsWith("setoption") or l == "stop"
+			()
+		else if l == "uci"
+			printLine("id name Moorhen chess engine demo")
+			printLine("id author 'VoxelMagpie'")
+			printLine("uciok")
+		else if l == "isready"
+			printLine("readyok")
+		else if l == "position startpos"
+			set gameState = startingAnalysedState
+		else if l.startsWith("position startpos moves ")
+			set gameStateUciString = l
+			set gameState = startingAnalysedState
+			let moves = l.substring("position startpos moves ".sizeInBytes(), l.sizeInBytes()).words()
+			let mut s = gameState.s
+
+			foreach m in moves.iter()
+				set s = s.applyMove(parseUciMove(m, s.board))
+
+			set gameState = s.analyse()
+			dbg(l)
+			dbg $ s.board.show()
+		else if l.startsWith("position fen ")
+			set gameStateUciString = l
+			let s = parseFen(l.substring("position fen ".sizeInBytes(), l.sizeInBytes()))
+			set gameState = s.analyse()
+			dbg(l)
+			dbg $ s.board.show()
+		else if l.startsWith("go ")
+			// Opening book
+			if gameStateUciString == "position startpos"
+				printLine("bestmove e2e4")
+			else if gameStateUciString == "position startpos moves e2e4"
+				printLine("bestmove e7e5")
+			else if gameStateUciString == "position startpos moves d2d4"
+				printLine("bestmove g8f6")
+			else
+				let startTime = getTimeMs()
+
+				let depth = if l == "go depth 1" then 1 else 3
+				dbg $ "Searching with depth " ++ depth.show()
+
+				let (m, a, e) =
+					match pickAMove(gameState, randomI32(), depth, gameState.s.nextToPlay)
+						Some(x) -> x
+						None -> panic("No moves")
+
+				dbg $ "Search took " ++ (getTimeMs() - startTime).show() ++ "ms"
+				let s = "bestmove " ++ m.toUci(gameState.s.board)
+				printLine(s)
+				dbg(s)
+				dbg(e)
+				dbg $ a.s.board.show()
+		else
+			panic("UCI protocol error")

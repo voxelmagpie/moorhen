@@ -1,0 +1,14 @@
+//6
+
+let main () : Int
+	let xs = [1, 2, 1, 2]
+	let mut y = 0
+	foreach x in iter(xs, 0)
+		set y = y + x
+	y
+
+let iter [A] (xs : Vec[A], nextIdx : Int) : Iter[A]
+	if nextIdx >= xs.length()
+		End
+	else
+		Next(xs.atOrPanic(nextIdx), \ -> iter(xs, nextIdx+1))

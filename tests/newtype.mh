@@ -1,0 +1,7 @@
+//6
+
+data X (Int)
+
+let main () : Int
+	let x = X(3)
+	x.0 + x.0

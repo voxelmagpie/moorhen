@@ -1,0 +1,13 @@
+//"b"
+
+let a : Bool = false
+let b : Bool = true
+let c : Bool = true
+
+let main () : String
+	if a
+		"a"
+	else if b
+		"b"
+	else
+		if c then "c" else "??"

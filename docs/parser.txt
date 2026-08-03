@@ -1,0 +1,33 @@
+The parser is a handwritten parser taking inspiration from parser combinators.
+The key difference from parser combinators is that this parser does not use backtracking.
+Instead it uses 'predicates'.
+A predicate is similar to a regex but defined in code rather than as a regex string.
+When the parser has to choose between different syntax rules it runs a number of predicates to decide which to parse.
+This allows the parser errors to specify what tokens were expected and 
+prevents any unexpected slowdowns from backtracking.
+This means that the basic combinators take a predicate rather than just a parse function.
+Sometimes a predicate isn't used and instead the next token is 'peeked' (examined without consuming).
+
+The parser state (the token stream) is passed around using the ImplicitParams extension.
+This allows parser functions to access and modify the token stream without explicitly passing it as an argument.
+Basically equivalent to the ReaderT IO pattern.
+Makes it possible to use mutable variables (IORef) without passing around an ST monad state type.
+
+
+
+Indentation is partially handled in the lexer.
+The lexer post processing pass converts groups of newlines and groups of tabs into Newline,Indent,Outdent.
+Matching pairs of Indent & Outdent tokens work like brackets with Newline as the separator.
+Indented blocks end each line with a newline, including a mandatory trailing newline separator. E.g.:
+let x = <indent>
+	let y = x + 1<newline>
+	x*y<newLine>
+<outdent><newline>
+Note the newline after the outdent because that let statement is part of another indented block 
+(possibly the root of the file).
+
+
+
+Why not Happy?
+1. Arbitrary limitations. I could not get the indented try-catch-finally syntax to parse
+2. It makes HLS allocate all my computer's memory and then crash

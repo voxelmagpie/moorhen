@@ -1,0 +1,222 @@
+
+
+builtin Int // Integer with >= 50 bits
+builtin I32
+builtin Real // 64-bit float
+builtin Bool
+builtin Unit
+builtin String
+builtin Lazy [A]
+builtin Any
+builtin Unreachable
+builtin Vec [A]
+
+// builtin Module
+// builtin Expr
+// builtin TypeExpr
+// builtin VDef
+// builtin DataDef
+// builtin TypeAlias
+// builtin Import
+// data TDef = ATypeAlias(TypeAlias) | ADataDef(DataDef) | AnModule(Module)
+// data TopLevelDef = ATDef(TDef) | AVDef(VDef)
+
+#deriving("Eq")
+data CodePoint(I32)
+
+data @Impure
+data @AsyncEffect
+type Async = @(Impure, AsyncEffect)
+data @BlockingEffect
+type Blocking = @(Impure, BlockingEffect)
+data @Throws [Er]
+data @MutatesVars [`L]
+
+// Potentially infinite iterator
+data InfIter [A] = End | Next(A, \ -> InfIter[A])
+
+data Iter [A] = End | Next(A, \ -> Iter[A])
+
+#deriving("Eq")
+data Ordering = OrdLt | OrdEq | OrdGt
+
+
+
+trait Eq
+	let eq == : \ Self, Self -> Bool
+	let neq != : \ Self, Self -> Bool
+
+trait Show
+	let show : \ Self -> String
+
+
+
+mod IntEq for Int
+	let eq == : \Int, Int -> Bool
+	let neq != : \Int, Int -> Bool
+
+mod I32Eq for I32
+	let eq == : \I32, I32 -> Bool
+	let neq != : \I32, I32 -> Bool
+
+mod RealEq for Real
+	let eq == : \Real, Real -> Bool
+	let neq != : \Real, Real -> Bool
+
+mod BoolEq for Bool
+	let eq == : \Bool, Bool -> Bool
+	let neq != : \Bool, Bool -> Bool
+
+mod StringEq for String
+	let eq == : \String, String -> Bool
+	let neq != : \String, String -> Bool
+
+mod UnitEq for Unit
+	let eq == : \Unit, Unit -> Bool
+	let neq != : \Unit, Unit -> Bool
+
+
+
+
+mod IterBuiltins [A] for Iter[A]
+	let collect : \Iter[A] -> Vec[A]
+
+let lazy [A] : \(\ -> A) -> Lazy[A]
+
+mod LazyFns [A] for Lazy[A]
+	let eval : \Lazy[A] -> A
+
+mod AsLazy [A] for A
+	let asLazy : \A -> Lazy[A]
+
+mod RealBuiltins for Real
+	let add + : \ Real, Real -> Real
+	let sub - : \ Real, Real -> Real
+	let mul * : \ Real, Real -> Real
+	let div / : \ Real, Real -> Real
+	let rem % : \ Real, Real -> Real
+
+	let gt > : \ Real, Real -> Bool
+	let gte >= : \ Real, Real -> Bool
+	let lt < : \ Real, Real -> Bool
+	let lte <= : \ Real, Real -> Bool
+
+	let show : \Real -> String
+	let neg - : \Real -> Real
+	let truncI32 : \Real -> I32
+
+let inf : Real
+let negInf : Real
+
+mod IntBuiltins for Int
+	let add + : \ Int, Int -> Int
+	let sub - : \ Int, Int -> Int
+	let mul * : \ Int, Int -> Int
+	let div / : \ Int, Int -> Int
+	let rem % : \ Int, Int -> Int
+
+	let gt > : \ Int, Int -> Bool
+	let gte >= : \ Int, Int -> Bool
+	let lt < : \ Int, Int -> Bool
+	let lte <= : \ Int, Int -> Bool
+
+	let show : \Int -> String
+	let neg - : \Int -> Int
+	let truncI32 : \Int -> I32
+
+mod I32Builtins for I32
+	let add + : \ I32, I32 -> I32
+	let sub - : \ I32, I32 -> I32
+	let mul * : \ I32, I32 -> I32
+	let div / : \ I32, I32 -> I32
+	let rem % : \ I32, I32 -> I32
+
+	let gt > : \ I32, I32 -> Bool
+	let gte >= : \ I32, I32 -> Bool
+	let lt < : \ I32, I32 -> Bool
+	let lte <= : \ I32, I32 -> Bool
+
+	let show : \I32 -> String
+	let neg - : \I32 -> I32
+
+	let bAnd : \ I32, I32 -> I32
+	let bOr : \ I32, I32 -> I32
+	let bXor : \ I32, I32 -> I32
+	let bNot : \ I32 -> I32
+
+mod BoolBuiltins for Bool
+	let not ! : \Bool -> Bool
+	let show : \Bool -> String
+
+mod StringBuiltins for String
+	// Length in bytes, note that JS strings are UTF-16 so ASCII characters take 2 bytes
+	let sizeInBytes : \String -> Int
+	let append ++ : \ String, String -> String
+	let startsWith : \String, String -> Bool
+	// [Start, end)
+	let substring : \String, Int, Int -> String
+	// TODO Iterator
+	let words : \String -> Vec[String]
+	// TODO Iterator
+	let lines : \String -> Vec[String]
+	// TODO Iterator
+	let split : \ String, String -> Vec[String]
+
+	// Returns the first code point in the string or 0 if empty
+	let ord : \String -> CodePoint
+
+	// Takes byte index
+	let getCodePointAt : \String, Int -> CodePoint
+
+	let iterCodePoints : \String -> Iter[CodePoint]
+
+	let contains
+		: \ String, String -> Bool
+
+mod CodePointBuiltins for CodePoint
+	let show : \CodePoint -> String
+
+mod VecBuiltins [A] for Vec[A]
+	let append ++ : \ Vec[A], Vec[A] -> Vec[A]
+	let atOrPanic : \ Vec[A], Int -> A
+	let setAtOrPanic : \ Vec[A], Int, A -> Vec[A]
+	let length : \Vec[A] -> Int
+
+	// \ Ascending order: \x, y -> if x < y then OrdLt else if x == y then OrdEq else OrdGt
+	let sort : \ Vec[A], (\A, A -> Ordering) -> Vec[A]
+
+let emptyVec [A] : Vec[A]
+let singletonVec [A] : \A -> Vec[A]
+
+// Calls the function with indices in ascending order from 0 .. length
+let buildVec [A, @E] : \Int, (\Int -> A @E) -> Vec[A] @E
+
+
+let undefined : Unreachable
+let todo : Unreachable
+let panic : \String -> Unreachable
+
+
+
+
+// These builtins are only valid when targetting NodeJS
+
+let readLine : \ -> String @Async
+
+// TODO This should be async
+let printLine : \String -> () @Impure
+
+// Write to stderr (or JS console)
+let dbg [A] : \A -> ()
+
+
+
+let randomReal : \ -> Real @Impure
+let randomInt : \ -> Int @Impure
+let randomI32 : \ -> I32 @Impure
+
+
+let getTimeMs : \ -> Real @Impure
+
+
+

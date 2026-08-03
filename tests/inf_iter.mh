@@ -1,0 +1,14 @@
+//"aa"
+
+let main () : String
+	let i = iter("")
+	match i
+		End -> ""
+		Next(s, i)
+			match i()
+				End -> s
+				Next(s, _) -> s
+
+let iter (s : String) : InfIter[String]
+	let s = s ++ "a"
+	Next(s, \ -> iter(s))

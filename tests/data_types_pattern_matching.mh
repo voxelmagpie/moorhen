@@ -1,0 +1,15 @@
+//"4"
+
+data Foo [A] = X | Y(A, Z)
+
+data Z = Z1 | Z2(Real)
+
+let x : Foo[Real] = Y(1.0, Z2(3.0))
+
+let main () : String
+	match x
+		Y(_, Z1)
+			""
+		Y(x, Z2(y))
+			(x+y).show()
+		_ -> ""

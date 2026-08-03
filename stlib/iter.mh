@@ -1,0 +1,142 @@
+import "maybe" (..)
+import "stack" (..)
+
+// Iter is defined in builtins.mh
+
+
+let emptyIter [A] : Iter[A] = End
+let singletonIter [A] (x : A) : Iter[A]
+	Next(x, \ -> End[A])
+
+
+mod IterFns [A] for Iter[A]
+	let isEnd (i : Iter[A]) : Bool
+		match i
+			End -> true
+			Next(_, _) -> false
+
+	let length (it : Iter[A]) : I32
+		let mut it = it
+		let mut l : I32 = 0
+		loop
+			match it
+				End -> break
+				Next(_, xs)
+					set l = l + 1
+					set it = xs()
+		l
+
+	let next (i : Iter[A]) : (Maybe[A], Iter[A])
+		match i
+			End -> (None, i)
+			Next(x, xs) -> (Some(x), xs())
+
+	let map [B] (xs : Iter[A], f : \A -> B) : Iter[B]
+		match xs
+			End -> End
+			Next(x, xs)
+				Next(f(x), \ -> xs().map(f))
+
+	let mapMaybe [B] (xs : Iter[A], f : \A -> Maybe[B]) : Iter[B]
+		match xs
+			End -> End
+			Next(x, xs)
+				match f(x)
+					None -> xs().mapMaybe(f)
+					Some(x) -> Next(x, \ -> xs().mapMaybe(f))
+
+	let iterToInf (iter : Iter[A]) : InfIter[A]
+		match iter
+			End -> End
+			Next(x, xs) -> Next(x, \ -> xs().iterToInf())
+
+	let find (xs : Iter[A], f : \A -> Bool) : Maybe[A]
+		match xs
+			End -> None
+			Next(x, xs)
+				if f(x)
+					Some(x)
+				else
+					xs().find(f)
+
+	let zip [B] (xs : Iter[A], ys : InfIter[B]) : Iter[(A, B)]
+		match (xs, ys)
+			(Next(x, xs), Next(y, ys))
+				Next((x, y), \ -> xs().zip(ys()))
+			_ -> End
+
+	let filter (xs : Iter[A], f : \A -> Bool) : Iter[A]
+		match xs
+			End -> End
+			Next(x, xs)
+				if f(x)
+					Next(x, \ -> xs().filter(f))
+				else
+					xs().filter(f)
+
+	let filterMap [B] (xs : Iter[A], f : \A -> Maybe[B]) : Iter[B]
+		match xs
+			End -> End
+			Next(x, xs)
+				match f(x)
+					Some(x)
+						Next(x, \ -> xs().filterMap(f))
+					_
+						xs().filterMap(f)
+
+	let fold (xs : Iter[A], f : \A, A -> A, init : A) : A
+		xs.fold_(f, init)
+
+	let fold_ [B] (xs : Iter[A], f : \B, A -> B, init : B) : B
+		let mut acc = init
+		let mut xs = xs
+		loop
+			match xs
+				End -> break
+				Next(x, ys)
+					set acc = f(acc, x)
+					set xs = ys()
+		acc
+
+	let take (it : Iter[A], n : I32) : Iter[A]
+		if n <= 0
+			End
+		else
+			match it
+				End -> End
+				Next(x, xs) -> Next(x, \ -> xs().take(n-1))
+
+	let append (it0 : Iter[A], it1 : Iter[A]) : Iter[A]
+		match it0
+			End -> it1
+			Next(x, xs)
+				Next(x, \ -> xs().append(it1))
+
+	// TODO Can this be done without the copy? (And without deep recursion)
+	let reverse (xs : Iter[A]) : Iter[A]
+		let mut ys : Stack[A] = Empty
+
+		foreach x in xs
+			set ys = ys.push(x)
+
+		ys.iter()
+
+	let enumFrom (xs : Iter[A], i : Int) : Iter[(Int, A)]
+		match xs
+			End -> End
+			Next(x, xs)
+				Next((i, x), \ -> xs().enumFrom(i + 1))
+
+
+	// Enumerates an iterator
+	// E.g. [a, b, c] -> [(0, a), (1, b), (2, c)]
+	let enum (xs : Iter[A]) : Iter[(Int, A)]
+		xs.enumFrom(0)
+
+
+
+mod InfIterFns [A] for InfIter[A]
+	let next (i : InfIter[A]) : (Maybe[A], InfIter[A])
+		match i
+			End -> (None, i)
+			Next(x, xs) -> (Some(x), xs())

@@ -1,0 +1,10 @@
+//"-3.5"
+
+let thisThenThat [A, B, C] (f : \A -> B, g : \B -> C, x : A) : C
+	g(f(x))
+
+let main () : String
+	let prefixMinus (s : String)
+		"-" ++ s
+
+	thisThenThat(\x : Real -> x.show(), prefixMinus, 3.5)

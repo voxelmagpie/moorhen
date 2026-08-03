@@ -1,0 +1,13 @@
+//18
+
+let main () : Int
+	let x = (X(3), (Y{a=6, b=1}, 4))
+	let (.(a), bc@(_, z)) = x
+	a + f(bc) + z
+
+
+let f ((.{a as x, b}, y) : (Y, Int)) : Int
+	x+y+b
+
+data X = X(Int)
+data Y { a : Int, b : Int }

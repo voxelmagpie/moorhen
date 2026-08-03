@@ -1,0 +1,11 @@
+//2
+
+let main () : Int
+	g(1)
+
+let g (x : Int) : Int
+	let y = 1
+	let h (x : Int) : Int
+		x + y
+	h(x)
+
