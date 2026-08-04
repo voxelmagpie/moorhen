@@ -493,7 +493,7 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
             <> " not found for type "
             <> typeToText (snd3 lhs)
         [x] -> pure x
-        _ -> throw name $ "Name '" <> getName (fst name) <> "' is ambiguous"
+        _ -> throw name $ "Member name '" <> getName (fst name) <> "' is ambiguous"
 
     calleeExprOrHint <-
       let t = substituteGenerics (zip (modParams <&> (.fqn)) modArgs) vDefType

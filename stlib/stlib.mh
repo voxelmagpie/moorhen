@@ -1,2 +1,6 @@
 let identity [A] (x : A) : A
 	x
+
+
+let dbg [A] (x : A) : () where A : Show
+	dbgString(x.show())

@@ -1,0 +1,27 @@
+//"Red, Pair(3, 4), Point{x = 3, y = 4}, One(7), true, Empty"
+
+#deriving("Show")
+data Colour = Red | Green | Blue
+
+#deriving("Show")
+data Pair = Pair(Int, Int)
+
+#deriving("Show")
+data Point {
+	x : Int
+	y : Int
+}
+
+#deriving("Show")
+data Num = One(Int) | Two(Int, Int)
+
+#deriving("Show")
+data Empty
+
+let main () : String
+	let a : Colour = Red
+	let b = Pair(3, 4)
+	let p = Point{ x = 3, y = 4 }
+	let d : Num = One(7)
+	let e : Empty = Empty
+	a.show() ++ ", " ++ b.show() ++ ", " ++ p.show() ++ ", " ++ d.show() ++ ", " ++ true.show() ++ ", " ++ e.show()

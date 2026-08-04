@@ -7,12 +7,10 @@ module Front.Macros (expandMacros) where
 import Control.Exception (Exception, throwIO)
 import Control.Monad (forM_)
 import Data.HashMap.Strict qualified as HM
+import Data.List (intersperse)
 import Data.Maybe (mapMaybe)
 import Error
 import Front.Ast qualified as A
-import Front.LexPost (convertTokenStream1Line)
-import Front.Lexer (lexMoorhen)
-import Front.Parser
 import GHC.Stack (HasCallStack)
 import MhPrelude
 import Names
@@ -26,8 +24,8 @@ newtype MacrosException = MacrosException Error
 throw :: (HasCallStack, HasSrcRange r) => r -> Text -> IO a
 throw sr msg = throwIO $ MacrosException $ Error ErrMacroExpansion SevError (srcRangeOf sr sr) $ msg
 
-expandMacros :: A.Ast -> FilePath -> IO (Either Error A.Ast)
-expandMacros ast srcPath = do
+expandMacros :: A.Ast -> IO (Either Error A.Ast)
+expandMacros ast = do
   let tDefs = flip mapMaybe (HM.elems ast.tDefs) $ \x -> case x.tDef of
         A.TypeDecl dc ds | notNull ds -> Just (x, dc, ds)
         _ -> Nothing
@@ -37,7 +35,10 @@ expandMacros ast srcPath = do
   forM_ tDefs $ \(tDef, dataConss, ds) -> forM_ ds $ \deriveName -> do
     case fst deriveName of
       "Eq" -> do
-        i <- generateEqMod tDef dataConss (snd deriveName) srcPath
+        i <- generateEqMod tDef dataConss (snd deriveName)
+        modVar newModules (i :)
+      "Show" -> do
+        i <- generateShowMod tDef dataConss (snd deriveName)
         modVar newModules (i :)
       _ ->
         throw (snd deriveName) $ "No such builtin derivable type class: " <> fst deriveName
@@ -46,8 +47,8 @@ expandMacros ast srcPath = do
 
   pure $ Right $ ast {A.tDefs = HM.union ast.tDefs $ HM.fromList $ newModules' <&> \i -> (fst i.name, i)}
 
-generateEqMod :: A.TDef -> List1 A.DataCons -> SrcRange -> FilePath -> IO A.TDef
-generateEqMod tDef dataConss sr srcPath = do
+generateEqMod :: A.TDef -> List1 A.DataCons -> SrcRange -> IO A.TDef
+generateEqMod tDef dataConss sr = do
   let name = fst tDef.name
   let genArgs = tDef.genParams <&> \(_, (n, _)) -> (A.TNamed (n, sr) [], sr)
   let forType = (A.TNamed (name, sr) genArgs, sr)
@@ -114,7 +115,12 @@ generateEqMod tDef dataConss sr srcPath = do
 
   let eqVDef = A.VDef (VName "eq", sr) (Just (OpName "==", sr)) [] [] Nothing (Just eqCloExpr) 0
 
-  neqExpr <- parseExpr "\\x, y -> !(x == y)" srcPath
+  let neqExpr =
+        let x = (A.EVar (VName "x") [], sr)
+            y = (A.EVar (VName "y") [], sr)
+            eqOp = (A.EMemberCall x (Right (OpName "=="), sr) [y], sr)
+            notEq = (A.EMemberCall eqOp (Right (OpName "!"), sr) [], sr)
+        in (A.EClosure [cloParam "x", cloParam "y"] notEq, sr)
   let neqVDef = A.VDef (VName "neq", sr) (Just (OpName "!=", sr)) [] [] Nothing (Just neqExpr) 1
 
   let vDefsOrdered = [eqVDef, neqVDef]
@@ -128,11 +134,62 @@ generateEqMod tDef dataConss sr srcPath = do
   let modName = TName $ un name <> "Eq"
   pure $ A.TDef {name = (modName, sr), genParams = tDef.genParams, isEffect = False, tDef = mod}
 
--- Source string must be valid or this will crash
-parseExpr :: Text -> FilePath -> IO A.Expr
-parseExpr src srcPath = do
-  case lexMoorhen srcPath src of
-    Left _ -> undefined
-    Right x -> do
-      tokens <- convertTokenStream1Line x <&> must
-      parseMoorhenExpr srcPath tokens <&> must
+generateShowMod :: A.TDef -> List1 A.DataCons -> SrcRange -> IO A.TDef
+generateShowMod tDef dataConss sr = do
+  let name = fst tDef.name
+  let genArgs = tDef.genParams <&> \(_, (n, _)) -> (A.TNamed (n, sr) [], sr)
+  let forType = (A.TNamed (name, sr) genArgs, sr)
+
+  let lit :: Text -> A.Expr
+      lit s = (A.ELitString s, sr)
+
+  -- ++
+  let mkAppend :: [A.Expr] -> A.Expr
+      mkAppend [] = lit ""
+      mkAppend [x] = x
+      mkAppend (x : xs) = (A.EMemberCall x (Right (OpName "++"), sr) [mkAppend xs], sr)
+
+  -- x.show()
+  let showField :: VName -> A.Expr
+      showField n = (A.EMemberCall (A.EVar n [], sr) (Left (VName "show"), sr) [], sr)
+
+  let wrapParens :: Text -> Text -> [A.Expr] -> A.Expr
+      wrapParens _ _ [] = lit "" -- Empty data constructor
+      wrapParens l r xs = mkAppend (lit l : xs <> [lit r])
+
+  let mkBranch :: A.DataCons -> A.MatchBranch
+      mkBranch (A.DataCons dcName fields) = do
+        let dcName' = un $ fst dcName
+        case fields of
+          A.TupleFields fs -> do
+            let patVars = [0 .. length fs - 1] <&> \i -> VName ("x" <> tShow i)
+            let pats = patVars <&> \n -> (A.PName n, sr)
+            let ptn = (A.PDataCons dcName pats, sr)
+            let args = intersperse (lit ", ") $ patVars <&> showField
+            A.MatchBranch ptn Nothing $ mkAppend [lit dcName', wrapParens "(" ")" args]
+          A.RecordFields fs -> do
+            let fieldNames = toList fs <&> (fst >>> fst)
+            let patVars = [0 .. length fieldNames - 1] <&> \i -> VName ("x" <> tShow i)
+            let pats = patVars <&> \n -> (A.PName n, sr)
+            let pairs = zip fieldNames pats <&> \(n, p) -> ((n, sr), p)
+            let ptn = (A.PRecord dcName pairs, sr)
+            let args' = zipWith (\n v -> mkAppend [lit (un n <> " = "), showField v]) fieldNames patVars
+            let args = intersperse (lit ", ") args'
+            A.MatchBranch ptn Nothing $ mkAppend $ lit (dcName' <> "{") : args <> [lit "}"]
+
+  let matchExpr = (A.EVar (VName "x") [], sr)
+  let matchBranches = dataConss <&> mkBranch
+  let showExpr = (A.EMatch matchExpr matchBranches, sr)
+
+  let cloParam n = ((A.DName (VName n) False, sr), Nothing)
+  let showCloExpr = (A.EClosure [cloParam "x"] showExpr, sr)
+  let showVDef = A.VDef (VName "show", sr) Nothing [] [] Nothing (Just showCloExpr) 0
+
+  let vDefsOrdered = [showVDef]
+  let nameMap = HM.fromList [(VName "show", showVDef)]
+  let vDefs = A.BlockInner {vDefsOrdered, nameMap, opMap = def}
+
+  let showTrait = (A.TNamed (TName "Show", sr) [], sr)
+  let mod = A.Module forType vDefs [showTrait] def
+  let modName = TName $ un name <> "Show"
+  pure $ A.TDef {name = (modName, sr), genParams = tDef.genParams, isEffect = False, tDef = mod}

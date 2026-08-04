@@ -594,7 +594,7 @@ mkDataConsPatternMatch scrutinee dcInfo fieldPatterns sr = do
       let tagCondition =
             (,sr)
               $ M.EFnCall
-                (M.EGlobal (VFqn "#builtins/:I32Eq.eq"), sr)
+                (M.EGlobal (VFqn "#builtins/:I32Builtins.eq"), sr)
                 [tagExpr, (M.ELoadConst $ M.CI32 (fromIntegral dcInfo.dcIdx), sr)]
                 False
                 M.TBool
@@ -662,7 +662,7 @@ cvtStmt (stmt, sr) = case stmt of
     let endCondition =
           (,sr)
             $ M.EFnCall
-              (M.EGlobal (VFqn "#builtins/:IntEq.eq"), sr)
+              (M.EGlobal (VFqn "#builtins/:IntBuiltins.eq"), sr)
               [tagExpr, (M.ELoadConst $ M.CInt 0, sr)]
               False
               M.TBool

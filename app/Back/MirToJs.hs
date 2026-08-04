@@ -226,8 +226,8 @@ inlinableFunctionOperators =
           ("RealBuiltins.mul", "*"),
           ("RealBuiltins.div", "/"),
           ("RealBuiltins.rem", "%"),
-          ("RealEq.eq", "=="),
-          ("RealEq.neq", "!="),
+          ("RealBuiltins.eq", "=="),
+          ("RealBuiltins.neq", "!="),
           ("RealBuiltins.gt", ">"),
           ("RealBuiltins.gte", ">="),
           ("RealBuiltins.lt", "<"),
@@ -237,9 +237,9 @@ inlinableFunctionOperators =
           ("IntBuiltins.mul", "*"),
           ("IntBuiltins.div", "/"),
           ("IntBuiltins.rem", "%"),
-          ("IntEq.eq", "=="),
-          ("IntEq.neq", "!="),
-          ("I32Eq.eq", "=="),
+          ("IntBuiltins.eq", "=="),
+          ("IntBuiltins.neq", "!="),
+          ("I32Builtins.eq", "=="),
           ("I32Builtins.neq", "!="),
           ("I32Builtins.bAnd", "&"),
           ("I32Builtins.bOr", "|"),
@@ -248,10 +248,10 @@ inlinableFunctionOperators =
           ("IntBuiltins.gte", ">="),
           ("IntBuiltins.lt", "<"),
           ("IntBuiltins.lte", "<="),
-          ("BoolEq.eq", "=="),
-          ("BoolEq.neq", "!="),
-          ("StringEq.eq", "=="),
-          ("StringEq.neq", "!=")
+          ("BoolBuiltins.eq", "=="),
+          ("BoolBuiltins.neq", "!="),
+          ("StringBuiltins.eq", "=="),
+          ("StringBuiltins.neq", "!=")
         ]
 
 inlinableUnaryFunctionOperators :: HashMap VFqn Text

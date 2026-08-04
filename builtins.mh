@@ -21,7 +21,6 @@ builtin Vec [A]
 // data TDef = ATypeAlias(TypeAlias) | ADataDef(DataDef) | AnModule(Module)
 // data TopLevelDef = ATDef(TDef) | AVDef(VDef)
 
-#deriving("Eq")
 data CodePoint(I32)
 
 data @Impure
@@ -51,32 +50,6 @@ trait Show
 
 
 
-mod IntEq for Int : Eq
-	let eq ==
-	let neq !=
-
-mod I32Eq for I32 : Eq
-	let eq ==
-	let neq !=
-
-mod RealEq for Real : Eq
-	let eq ==
-	let neq !=
-
-mod BoolEq for Bool : Eq
-	let eq ==
-	let neq !=
-
-mod StringEq for String : Eq
-	let eq ==
-	let neq !=
-
-mod UnitEq for Unit : Eq
-	let eq ==
-	let neq !=
-
-
-
 
 mod IterBuiltins [A] for Iter[A]
 	let collect : \Iter[A] -> Vec[A]
@@ -89,7 +62,7 @@ mod LazyFns [A] for Lazy[A]
 mod AsLazy [A] for A
 	let asLazy : \A -> Lazy[A]
 
-mod RealBuiltins for Real
+mod RealBuiltins for Real : Show, Eq
 	let add + : \ Real, Real -> Real
 	let sub - : \ Real, Real -> Real
 	let mul * : \ Real, Real -> Real
@@ -100,15 +73,17 @@ mod RealBuiltins for Real
 	let gte >= : \ Real, Real -> Bool
 	let lt < : \ Real, Real -> Bool
 	let lte <= : \ Real, Real -> Bool
-
-	let show : \Real -> String
 	let neg - : \Real -> Real
 	let truncI32 : \Real -> I32
+
+	let show
+	let eq ==
+	let neq !=
 
 let inf : Real
 let negInf : Real
 
-mod IntBuiltins for Int
+mod IntBuiltins for Int : Show, Eq
 	let add + : \ Int, Int -> Int
 	let sub - : \ Int, Int -> Int
 	let mul * : \ Int, Int -> Int
@@ -120,11 +95,14 @@ mod IntBuiltins for Int
 	let lt < : \ Int, Int -> Bool
 	let lte <= : \ Int, Int -> Bool
 
-	let show : \Int -> String
 	let neg - : \Int -> Int
 	let truncI32 : \Int -> I32
 
-mod I32Builtins for I32
+	let show
+	let eq ==
+	let neq !=
+
+mod I32Builtins for I32 : Show, Eq
 	let add + : \ I32, I32 -> I32
 	let sub - : \ I32, I32 -> I32
 	let mul * : \ I32, I32 -> I32
@@ -136,7 +114,6 @@ mod I32Builtins for I32
 	let lt < : \ I32, I32 -> Bool
 	let lte <= : \ I32, I32 -> Bool
 
-	let show : \I32 -> String
 	let neg - : \I32 -> I32
 
 	let bAnd : \ I32, I32 -> I32
@@ -144,11 +121,18 @@ mod I32Builtins for I32
 	let bXor : \ I32, I32 -> I32
 	let bNot : \ I32 -> I32
 
-mod BoolBuiltins for Bool
-	let not ! : \Bool -> Bool
-	let show : \Bool -> String
+	let show
+	let eq ==
+	let neq !=
 
-mod StringBuiltins for String
+mod BoolBuiltins for Bool : Show, Eq
+	let not ! : \Bool -> Bool
+
+	let show
+	let eq ==
+	let neq !=
+
+mod StringBuiltins for String : Show, Eq
 	// Length in bytes, note that JS strings are UTF-16 so ASCII characters take 2 bytes
 	let sizeInBytes : \String -> Int
 	let append ++ : \ String, String -> String
@@ -173,8 +157,19 @@ mod StringBuiltins for String
 	let contains
 		: \ String, String -> Bool
 
-mod CodePointBuiltins for CodePoint
-	let show : \CodePoint -> String
+	let show
+	let eq ==
+	let neq !=
+
+mod UnitBuiltins for Unit : Show, Eq
+	let eq ==
+	let neq !=
+	let show
+
+mod CodePointBuiltins for CodePoint : Show, Eq
+	let eq ==
+	let neq !=
+	let show
 
 mod VecBuiltins [A] for Vec[A]
 	let append ++ : \ Vec[A], Vec[A] -> Vec[A]
@@ -206,8 +201,9 @@ let readLine : \ -> String @Async
 // TODO This should be async
 let printLine : \String -> () @Impure
 
-// Write to stderr (or JS console)
-let dbg [A] : \A -> ()
+// Writes to stderr (or JS console)
+// Pretends to be pure, intended to be used for debugging only
+let dbgString : \String -> ()
 
 
 

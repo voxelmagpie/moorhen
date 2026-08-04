@@ -85,7 +85,7 @@ parseFile srcPath srcMaybe dumpDir writeAsts = do
 
   macrosStartTime <- getCurrentTime
   ast' <-
-    expandMacros ast srcPath >>= \case
+    expandMacros ast >>= \case
       Left e -> throwIO $ CompileException $ formatError True e
       Right a -> pure a
   macrosEndTime <- getCurrentTime

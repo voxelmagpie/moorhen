@@ -7,16 +7,27 @@ export class MhEx extends Error {
     }
 }
 
-export function $0builtins$1$2RealEq$3eq(x, y) { return x == y; }
-export function $0builtins$1$2RealEq$3neq(x, y) { return x != y; }
-export function $0builtins$1$2IntEq$3eq(x, y) { return x == y; }
-export function $0builtins$1$2IntEq$3neq(x, y) { return x != y; }
-export function $0builtins$1$2I32Eq$3eq(x, y) { return x == y; }
-export function $0builtins$1$2I32Eq$3neq(x, y) { return x != y; }
-export function $0builtins$1$2StringEq$3eq(x, y) { return x == y; }
-export function $0builtins$1$2StringEq$3neq(x, y) { return x != y; }
-export function $0builtins$1$2UnitEq$3eq(x, y) { return true; }
-export function $0builtins$1$2UnitEq$3neq(x, y) { return false; }
+export function $0builtins$1$2RealBuiltins$3eq(x, y) { return x == y; }
+export function $0builtins$1$2RealBuiltins$3neq(x, y) { return x != y; }
+export function $0builtins$1$2IntBuiltins$3eq(x, y) { return x == y; }
+export function $0builtins$1$2IntBuiltins$3neq(x, y) { return x != y; }
+export function $0builtins$1$2I32Builtins$3eq(x, y) { return x == y; }
+export function $0builtins$1$2I32Builtins$3neq(x, y) { return x != y; }
+export function $0builtins$1$2StringBuiltins$3eq(x, y) { return x == y; }
+export function $0builtins$1$2StringBuiltins$3neq(x, y) { return x != y; }
+export function $0builtins$1$2UnitBuiltins$3eq(x, y) { return true; }
+export function $0builtins$1$2UnitBuiltins$3neq(x, y) { return false; }
+export function $0builtins$1$2BoolBuiltins$3eq(x, y) { return x == y; }
+export function $0builtins$1$2BoolBuiltins$3neq(x, y) { return x != y; }
+export function $0builtins$1$2CodePointBuiltins$3eq(x, y) { return x == y; }
+export function $0builtins$1$2CodePointBuiltins$3neq(x, y) { return x != y; }
+
+export function $0builtins$1$2RealBuiltins$3show(x) { return x.toString(); }
+export function $0builtins$1$2IntBuiltins$3show(x) { return x.toString(); }
+export function $0builtins$1$2I32Builtins$3show(x) { return x.toString(); }
+export function $0builtins$1$2BoolBuiltins$3show(x) { return x.toString(); }
+export function $0builtins$1$2UnitBuiltins$3show(x) { return "()"; }
+export function $0builtins$1$2StringBuiltins$3show(x) { return x; }
 
 
 
@@ -74,9 +85,6 @@ export function $0builtins$1$2I32Builtins$3bNot(x) { return ~x; }
 
 
 
-export function $0builtins$1$2RealBuiltins$3show(x) { return x.toString(); }
-export function $0builtins$1$2IntBuiltins$3show(x) { return x.toString(); }
-export function $0builtins$1$2I32Builtins$3show(x) { return x.toString(); }
 export function $0builtins$1$2StringBuiltins$3sizeInBytes(x) { return x.length * 2; }
 export function $0builtins$1$2StringBuiltins$3append(x, y) { return x.concat(y); }
 export function $0builtins$1$2StringBuiltins$3startsWith(x, y) { return x.startsWith(y); }
@@ -107,9 +115,6 @@ export function $0builtins$1$2StringBuiltins$3iterCodePoints(s) {
 
 
 export function $0builtins$1$2BoolBuiltins$3not(x) { return !x; }
-export function $0builtins$1$2BoolBuiltins$3show(x) { return x.toString(); }
-export function $0builtins$1$2BoolEq$3eq(x, y) { return x == y; }
-export function $0builtins$1$2BoolEq$3neq(x, y) { return x != y; }
 
 
 export const $0builtins$1$2undefined = undefined;
@@ -234,9 +239,7 @@ export function $0builtins$1$2printLine(s) {
     console.log(s);
 }
 
-export function $0builtins$1$2dbg(x) {
-    var s = (typeof x == 'string') ? x : JSON.stringify(x);
-
+export function $0builtins$1$2dbgString(s) {
     if (typeof window === 'undefined') {
         console.warn(s);
     }

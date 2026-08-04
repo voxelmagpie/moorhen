@@ -325,8 +325,8 @@ evalBuiltin (VFqn fqn) ps'' sr fnExpr = do
         let c = xs !! fromIntegral i
         pure (valueToExpr (snd $ fst fnExpr) c, Just $ KnownConst $ c)
       _ -> undefined
-    "IntEq.eq" -> doIntCmpFn (==)
-    "IntEq.neq" -> doIntCmpFn (/=)
+    "IntBuiltins.eq" -> doIntCmpFn (==)
+    "IntBuiltins.neq" -> doIntCmpFn (/=)
     "IntBuiltins.gt" -> doIntCmpFn (>)
     "IntBuiltins.gte" -> doIntCmpFn (>=)
     "IntBuiltins.lt" -> doIntCmpFn (<)

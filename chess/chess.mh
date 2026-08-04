@@ -1,6 +1,7 @@
 // A (primitive) chess engine
 // This is made to work with the KDE Knights program and hasn't been tested with other software
 
+import "#stlib/stlib" (..)
 import "#stlib/num" (..)
 import "#stlib/maybe" (..)
 import "#stlib/vec" (..)
@@ -8,7 +9,7 @@ import "#stlib/iter" (..)
 import "#stlib/stack" (..)
 import "#stlib/assert" (..)
 
-#deriving("Eq")
+#deriving("Eq", "Show")
 data Piece = Pawn | Knight | Bishop | Rook | Queen | King
 
 mod PieceFns for Piece
@@ -41,7 +42,7 @@ mod PieceFns for Piece
 
 let knightMoves : Vec[(Int, Int)] = [(2, -1), (2, 1), (1, 2), (-1, 2), (-2, 1), (-2, -1), (-1, -2), (1, -2)]
 
-#deriving("Eq")
+#deriving("Eq", "Show")
 data Player = White | Black
 
 type BoardTile = Maybe[(Piece, Player)]
@@ -162,17 +163,17 @@ mod BoardFns for Board
 		(white.iter().collect(), black.iter().collect())
 
 
-#deriving("Eq")
+#deriving("Eq", "Show")
 data Side = QueenSide | KingSide
 
-#deriving("Eq")
+#deriving("Eq", "Show")
 data Tile { file : Int, rank : Int }
 
 mod TileFns for Tile
 	let isValid (tile : Tile) : Bool
 		tile.rank >= 0 and tile.rank < 8 and tile.file >= 0 and tile.file < 8
 
-#deriving("Eq")
+#deriving("Eq", "Show")
 data CastlingRights { kingSide : Bool, queenSide : Bool }
 
 let noCastlingRights () : CastlingRights
@@ -244,7 +245,7 @@ let startingAnalysedState : AnalysedState =
 		blackDefences = []
 	}
 
-#deriving("Eq")
+#deriving("Eq", "Show")
 data Move = Move (Tile, Tile, Piece) | CastleMove(Player, Side)
 
 mod MoveFns for Move
@@ -264,7 +265,7 @@ mod MoveFns for Move
 				let newKingTile = oldKingTile { file = if side == KingSide then 6 else 2 }
 				Move(oldKingTile, newKingTile, King).toUci(board)
 
-#deriving("Eq")
+#deriving("Eq", "Show")
 data Threat {
 	attacker : Tile
 	defender : Tile

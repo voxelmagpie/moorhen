@@ -11,3 +11,8 @@ Generic functions with where clauses are implemented via partial application of 
 The function takes the where clause tables and returns a closure that contains the actual function code.
 The inner closure captures the where clause implicit parameter.
 
+
+Automatic trait deriving is handled by the macro expander (app/Front/Macros.hs).
+A #deriving("TraitName") pragma on a data declaration generates a module implementing the
+trait for that type. Currently supports: Eq, Show.
+The macro goes entirely off of the shape of the type (record/enum/sum/empty/etc.).
