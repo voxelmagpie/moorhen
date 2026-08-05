@@ -120,7 +120,7 @@ generateEqMod tDef dataConss sr = do
             y = (A.EVar (VName "y") [], sr)
             eqOp = (A.EMemberCall x (Right (OpName "=="), sr) [y], sr)
             notEq = (A.EMemberCall eqOp (Right (OpName "!"), sr) [], sr)
-        in (A.EClosure [cloParam "x", cloParam "y"] notEq, sr)
+         in (A.EClosure [cloParam "x", cloParam "y"] notEq, sr)
   let neqVDef = A.VDef (VName "neq", sr) (Just (OpName "!=", sr)) [] [] Nothing (Just neqExpr) 1
 
   let vDefsOrdered = [eqVDef, neqVDef]
@@ -130,7 +130,8 @@ generateEqMod tDef dataConss sr = do
 
   let eqTrait = (A.TNamed (TName "Eq", sr) [], sr)
 
-  let mod = A.Module forType vDefs [eqTrait] def
+  let whereClauses = tDef.genParams <&> \(_, (n, _)) -> ((A.TNamed (n, sr) [], sr), (A.TNamed (TName "Eq", sr) [], sr))
+  let mod = A.Module forType vDefs [eqTrait] whereClauses
   let modName = TName $ un name <> "Eq"
   pure $ A.TDef {name = (modName, sr), genParams = tDef.genParams, isEffect = False, tDef = mod}
 
@@ -190,6 +191,7 @@ generateShowMod tDef dataConss sr = do
   let vDefs = A.BlockInner {vDefsOrdered, nameMap, opMap = def}
 
   let showTrait = (A.TNamed (TName "Show", sr) [], sr)
-  let mod = A.Module forType vDefs [showTrait] def
+  let whereClauses = tDef.genParams <&> \(_, (n, _)) -> ((A.TNamed (n, sr) [], sr), (A.TNamed (TName "Show", sr) [], sr))
+  let mod = A.Module forType vDefs [showTrait] whereClauses
   let modName = TName $ un name <> "Show"
   pure $ A.TDef {name = (modName, sr), genParams = tDef.genParams, isEffect = False, tDef = mod}
