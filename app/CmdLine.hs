@@ -2,7 +2,7 @@
 -- License, v. 2.0. If a copy of the MPL was not distributed with this
 -- file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-module CmdLine (ArgsException (..), extractArgs, Config (..)) where
+module CmdLine (ArgsException (..), extractArgs, Config (..), Action (..)) where
 
 import Control.Exception (Exception)
 import Control.Monad (when)
@@ -18,7 +18,7 @@ newtype ArgsException = ArgsException Text
   deriving anyclass (Exception, Newtype)
 
 -- If an arg begins with "-" then it is a setting, otherwise it is a file path/name
-data Arg = ArgFilePath String | ArgSetting String (Maybe String)
+data Arg = ArgFilePathOrCmd String | ArgSetting String (Maybe String)
 
 type ArgProcessor = ExceptT ArgsException (State ([Arg], Config))
 
@@ -30,41 +30,53 @@ getNextArg =
       modify' $ first $ const ys
       pure $ Just y
 
-peekNextArg :: ArgProcessor (Maybe Arg)
-peekNextArg = gets (head . fst)
-
 -- For getting args after "--" to pass to the compiled program
 getAllRemainingArgStrings :: ArgProcessor [String]
 getAllRemainingArgStrings = do
   xs <- gets fst
   modify' $ first (const [])
   pure $ xs <&> \case
-    ArgFilePath x -> x
+    ArgFilePathOrCmd x -> x
     ArgSetting x Nothing -> x
     ArgSetting x (Just y) -> x <> "=" <> y
 
--- e.g. moorhen build foo.moorhen --build-mode=debug lol.moorhen -a --stlib res/stlib/
+-- e.g. moorhen --xyz build foo.moorhen --build-mode=debug lol.moorhen -a --stlib res/stlib/
 extractArgs :: [String] -> Either ArgsException Config
-extractArgs xs = case runState (runExceptT go1) (xs', def) of
+extractArgs xs = case runState (runExceptT go) (xs', def) of
   (Left err, _) -> Left err
   (Right _, (_, y)) -> Right y
   where
-    go1 :: ArgProcessor ()
-    go1 = do
-      -- Get source file or directory
-      peekNextArg >>= \case
-        Just (ArgFilePath path) -> do
-          _ <- getNextArg
-          modify' $ second $ \s -> s {inputFileOrDir = Just path}
-          peekNextArg >>= \case
-            Just (ArgFilePath _) -> throwError $ ArgsException "Multiple input files/directories"
-            _ -> go2
-        _ -> go2
-
-    go2 :: ArgProcessor ()
-    go2 = do
+    go :: ArgProcessor ()
+    go = do
       -- Get configuration argument
       getNextArg >>= \case
+        -- Actions
+        Just (ArgFilePathOrCmd cmd) -> do
+          hasCmdAlready <- gets (snd >>> (.action)) <&> isJust
+          when hasCmdAlready $ throwError $ ArgsException "Multiple commands specified"
+          case cmd of
+            "tests" -> do
+              modify' $ second $ \s -> s {action = Just ActTests}
+            "build" -> do
+              getNextArg >>= \case
+                Just (ArgFilePathOrCmd path) -> do
+                  modify' $ second $ \s -> s {action = Just $ ActBuild path}
+                _ -> throwError $ ArgsException "Expected source file or package path"
+            "help" -> do
+              modify' $ second $ \s -> s {action = Just ActHelp}
+            "check" -> do
+              getNextArg >>= \case
+                Just (ArgFilePathOrCmd path) -> do
+                  modify' $ second $ \s -> s {action = Just $ ActCheck path}
+                _ -> throwError $ ArgsException "Expected source file or package path"
+            _ ->
+              throwError
+                $ ArgsException
+                $ "Unrecognised action: "
+                <> T.pack cmd
+                <> "\nRun 'moorhen help' to get a list of actions"
+          go
+        -- Settings
         Just (ArgSetting option valueMaybe) -> do
           let hasVal = isJust valueMaybe
           let checkNoVal = when hasVal $ throwError $ ArgsException "Expected path, got value (=)"
@@ -72,7 +84,7 @@ extractArgs xs = case runState (runExceptT go1) (xs', def) of
             "--out-dir" -> do
               checkNoVal
               getNextArg >>= \case
-                Just (ArgFilePath path) -> do
+                Just (ArgFilePathOrCmd path) -> do
                   modify' $ second $ \s -> s {outDir = Just path}
                 _ -> throwError $ ArgsException "Expected output executable file path"
             "--" -> do
@@ -81,13 +93,13 @@ extractArgs xs = case runState (runExceptT go1) (xs', def) of
             "--builtins-path" -> do
               checkNoVal
               getNextArg >>= \case
-                Just (ArgFilePath path) -> do
+                Just (ArgFilePathOrCmd path) -> do
                   modify' $ second $ \s -> s {builtinsPath = Just path}
                 _ -> throwError $ ArgsException "Expected directory path"
             "--stlib-path" -> do
               checkNoVal
               getNextArg >>= \case
-                Just (ArgFilePath path) -> do
+                Just (ArgFilePathOrCmd path) -> do
                   modify' $ second $ \s -> s {stlibPath = Just path}
                 _ -> throwError $ ArgsException "Expected directory path"
             "--timings" ->
@@ -95,8 +107,8 @@ extractArgs xs = case runState (runExceptT go1) (xs', def) of
             "--debug-ast" -> modify' $ second $ \s -> s {outputDebugAst = True}
             "--debug-hir" -> modify' $ second $ \s -> s {outputDebugHir = True}
             _ -> throwError $ ArgsException $ "Unknown configuration option: " <> T.pack option
-          go2
-        _ -> pure ()
+          go
+        Nothing -> pure ()
     xs' =
       xs <&> \s ->
         if "-" `isPrefixOf` s
@@ -104,10 +116,13 @@ extractArgs xs = case runState (runExceptT go1) (xs', def) of
             Just i -> ArgSetting (take i s) (Just $ drop (i + 1) s)
             _ -> ArgSetting s Nothing
           else
-            ArgFilePath s
+            ArgFilePathOrCmd s
+
+data Action = ActTests | ActBuild FilePath | ActHelp | ActCheck FilePath
+  deriving (Show, Eq)
 
 data Config = Config
-  { inputFileOrDir :: Maybe String,
+  { action :: Maybe Action,
     outDir :: Maybe String,
     args :: [String],
     builtinsPath :: Maybe FilePath,

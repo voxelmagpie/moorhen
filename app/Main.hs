@@ -9,7 +9,6 @@ import CmdLine
 import Control.Exception (handle, throwIO)
 import Control.Monad (when)
 import Data.HashMap.Strict qualified as HM
-import Data.List (uncons)
 import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -34,83 +33,80 @@ main = do
 main' :: IO ()
 main' = do
   args <- getArgs
-  case uncons args of
-    Nothing -> putStrLn "Moorhen compiler v0.1.0"
-    Just (cmd, args'') -> do
-      cfg <- case extractArgs args'' of Left e -> throwIO e; Right x -> pure x
+  do
+    cfg <- case extractArgs args of Left e -> throwIO e; Right x -> pure x
 
-      selfDir <- getSymbolicLinkTarget "/proc/self/exe" <&> takeDirectory
+    selfDir <- getSymbolicLinkTarget "/proc/self/exe" <&> takeDirectory
 
-      let builtinsDir = fromMaybe (selfDir </> "builtins") cfg.builtinsPath
-      let stlibDir = fromMaybe (selfDir </> "stlib") cfg.stlibPath
+    let builtinsDir = fromMaybe (selfDir </> "builtins.mh") cfg.builtinsPath
+    let stlibDir = fromMaybe (selfDir </> "stlib") cfg.stlibPath
 
-      let outDir = fromMaybe "out" cfg.outDir
+    let outDir = fromMaybe "out" cfg.outDir
 
-      when (cfg.outputDebugAst || cfg.outputDebugHir) $ createDirectoryIfMissing False outDir
+    when (cfg.outputDebugAst || cfg.outputDebugHir) $ createDirectoryIfMissing False outDir
 
-      builtins@(builtinsHir, builtinsMir, builtinsTimings) <-
-        compileBuiltins cfg.outputDebugAst cfg.outputDebugHir builtinsDir outDir
+    builtins@(builtinsHir, builtinsMir, builtinsTimings) <-
+      compileBuiltins cfg.outputDebugAst cfg.outputDebugHir builtinsDir outDir
 
-      case cmd of
-        "help" ->
-          TIO.putStrLn helpFile
-        "tests" ->
-          runTests builtins cfg.outputDebugAst cfg.outputDebugHir builtinsMjs outDir
-        _ -> do
-          srcPath <- case cfg.inputFileOrDir of
-            Nothing -> die "Expected path to source file or directory"
-            Just x -> pure x
+    case cfg.action of
+      Just ActHelp ->
+        TIO.putStrLn helpFile
+      Just ActTests ->
+        runTests builtins cfg.outputDebugAst cfg.outputDebugHir builtinsMjs outDir
+      Nothing -> putStrLn "Moorhen compiler v0.1.0"
+      Just action -> do
+        srcPath <- case action of
+          ActBuild x -> pure x
+          ActCheck x -> pure x
 
-          let bn = T.pack (takeBaseName srcPath)
-          when (isJust $ T.find (\c -> c == '/' || c == '#') bn) $ die "Source path contains invalid characters"
-          let pkgName = PkgName $ "#" <> bn
+        let bn = T.pack (takeBaseName srcPath)
+        when (isJust $ T.find (\c -> c == '/' || c == '#') bn) $ die "Source path contains invalid characters"
+        let pkgName = PkgName $ "#" <> bn
 
-          (stLibHir, stLibTimings) <- typeCheckStLib cfg.outputDebugAst cfg.outputDebugHir stlibDir builtinsHir outDir
+        (stLibHir, stLibTimings) <- typeCheckStLib cfg.outputDebugAst cfg.outputDebugHir stlibDir builtinsHir outDir
 
-          case cmd of
-            "build" -> do
-              createDirectoryIfMissing False outDir
+        case action of
+          ActBuild _ -> do
+            createDirectoryIfMissing False outDir
 
-              (stlibMir, stLibTimings2) <- compileStLib (builtinsHir, builtinsMir) stLibHir
+            (stlibMir, stLibTimings2) <- compileStLib (builtinsHir, builtinsMir) stLibHir
 
-              let pkgs = [(PkgName "#builtins", builtinsHir), (PkgName "#stlib", stLibHir)]
+            let pkgs = [(PkgName "#builtins", builtinsHir), (PkgName "#stlib", stLibHir)]
 
-              (hir, hirGenTimings) <-
-                handle @CompileException (un >>> T.unpack >>> die)
-                  $ compilePackage pkgName srcPath pkgs cfg.outputDebugAst cfg.outputDebugHir outDir
+            (hir, hirGenTimings) <-
+              handle @CompileException (un >>> T.unpack >>> die)
+                $ compilePackage pkgName srcPath pkgs cfg.outputDebugAst cfg.outputDebugHir outDir
 
-              let pkgsHir =
-                    HM.fromList [(PkgName "#builtins", builtinsHir), (PkgName "#stlib", stLibHir), (pkgName, hir)]
+            let pkgsHir =
+                  HM.fromList [(PkgName "#builtins", builtinsHir), (PkgName "#stlib", stLibHir), (pkgName, hir)]
 
-              let pkgsMir = HM.fromList [(PkgName "#builtins", builtinsMir), (PkgName "#stlib", stlibMir)]
+            let pkgsMir = HM.fromList [(PkgName "#builtins", builtinsMir), (PkgName "#stlib", stlibMir)]
 
-              (mir', genMirTimings) <- genPackageMir pkgsHir pkgsMir pkgName True
+            (mir', genMirTimings) <- genPackageMir pkgsHir pkgsMir pkgName True
 
-              let pkgsMir' = HM.insert pkgName mir' pkgsMir
-              (js, toJsTimings) <- genJS pkgName pkgsMir'
+            let pkgsMir' = HM.insert pkgName mir' pkgsMir
+            (js, toJsTimings) <- genJS pkgName pkgsMir'
 
-              withFile (outDir </> T.unpack js.fileNameNoExt <.> "mjs") WriteMode $ \f -> do
-                TIO.hPutStrLn f js.js
-                TIO.hPutStrLn f builtinsMjs
-                -- TODO Check there is a main function during/after type checking
-                TIO.hPutStrLn f $ filterFqn (un pkgName <> "/:main") <> "()"
-              withFile (outDir </> T.unpack js.fileNameNoExt <.> "mjs.map") WriteMode $ flip TIO.hPutStrLn js.sourceMap
+            withFile (outDir </> T.unpack js.fileNameNoExt <.> "mjs") WriteMode $ \f -> do
+              TIO.hPutStrLn f js.js
+              TIO.hPutStrLn f builtinsMjs
+              -- TODO Check there is a main function during/after type checking
+              TIO.hPutStrLn f $ filterFqn (un pkgName <> "/:main") <> "()"
+            withFile (outDir </> T.unpack js.fileNameNoExt <.> "mjs.map") WriteMode $ flip TIO.hPutStrLn js.sourceMap
 
-              let appTimings = hirGenTimings <> genMirTimings <> toJsTimings
-              when cfg.timings
-                $ writeTimingsFile
-                  (outDir </> "timings.txt")
-                  [("builtins", builtinsTimings), ("stlib", stLibTimings <> stLibTimings2), ("app", appTimings)]
-            --
-            "check" -> do
-              let pkgs = [(PkgName "#builtins", builtinsHir), (PkgName "#stlib", stLibHir)]
-              (_hir, timings) <-
-                handle @CompileException (un >>> T.unpack >>> die)
-                  $ compilePackage pkgName srcPath pkgs cfg.outputDebugAst cfg.outputDebugHir outDir
+            let appTimings = hirGenTimings <> genMirTimings <> toJsTimings
+            when cfg.timings
+              $ writeTimingsFile
+                (outDir </> "timings.txt")
+                [("builtins", builtinsTimings), ("stlib", stLibTimings <> stLibTimings2), ("app", appTimings)]
+          --
+          ActCheck _ -> do
+            let pkgs = [(PkgName "#builtins", builtinsHir), (PkgName "#stlib", stLibHir)]
+            (_hir, timings) <-
+              handle @CompileException (un >>> T.unpack >>> die)
+                $ compilePackage pkgName srcPath pkgs cfg.outputDebugAst cfg.outputDebugHir outDir
 
-              when cfg.timings
-                $ writeTimingsFile
-                  (outDir </> "timings.txt")
-                  [("builtins", builtinsTimings), ("stlib", stLibTimings), ("app", timings)]
-            --
-            _ -> die $ "Unknown command: '" <> cmd <> "'\nRun 'moorhen help' to get a list of commands"
+            when cfg.timings
+              $ writeTimingsFile
+                (outDir </> "timings.txt")
+                [("builtins", builtinsTimings), ("stlib", stLibTimings), ("app", timings)]

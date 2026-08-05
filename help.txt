@@ -1,6 +1,6 @@
-Usage: moorhen <mode> [options]
+Usage: moorhen <action> [options]
 
-Modes:
+Actions:
   build <dir> <args>     Compiles the given Moorhen source file or package
   check <dir> <args>     Checks the given Moorhen source file or package for 
                          errors without building
