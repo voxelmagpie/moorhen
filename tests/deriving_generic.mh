@@ -1,0 +1,9 @@
+//true
+
+#deriving("Eq")
+data Pair[T] = Pair(T, T)
+
+let main () : Bool
+	let a : Pair[Int] = Pair(3, 4)
+	let b : Pair[Int] = Pair(3, 4)
+	a == b

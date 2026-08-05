@@ -9,6 +9,7 @@ import Front.Ast qualified as A
 import Front.Hir qualified as H
 import Front.Tc.Context
 import Front.Tc.Error (MonadTcError (throw))
+import Front.Tc.Generics (substituteGenerics)
 import Front.Tc.State
 import Front.Tc.Types
 import MhPrelude
@@ -89,18 +90,25 @@ visitDestructure ctxVar t (destr, sr) = case destr of
     pure (H.DTuple ds', t, sr)
   A.DDataCons ds -> do
     ctx <- getVar ctxVar
-    (tDef2, (tFqn, _)) <- getTDef2 ctx sr t
+    (tDef2, (tFqn, genArgs)) <- getTDef2 ctx sr t
     (name, ts) <- case tDef2.dataCons of
-      List1 (H.DataCons (name, _) (H.TupleFields xs)) [] | notNull xs -> pure (name, must $ listToList1 xs)
+      List1 (H.DataCons (name, _) (H.TupleFields xs)) []
+        | notNull xs -> do
+            let gpMap = zip tDef2.t1.genParams genArgs <&> first (.fqn)
+            let ts = xs <&> substituteGenerics gpMap
+            pure (name, must $ listToList1 ts)
       _ -> throw sr "Expected a type of form data X(A, B, ...)"
     ds' <- forM (zipList1 ts ds) $ uncurry $ visitDestructure ctxVar
     let dCons = H.DataConsInfo tFqn name 0 True True tDef2.isEnumType
     pure (H.DDataCons dCons ds', t, sr)
   A.DRecord fields -> do
     ctx <- getVar ctxVar
-    (tDef2, (tFqn, _)) <- getTDef2 ctx sr t
+    (tDef2, (tFqn, genArgs)) <- getTDef2 ctx sr t
     (dConsName, dConsFields) <- case tDef2.dataCons of
-      List1 (H.DataCons (name, _) (H.RecordFields xs)) [] -> pure (name, toList xs)
+      List1 (H.DataCons (name, _) (H.RecordFields xs)) [] -> do
+        let gpMap = zip tDef2.t1.genParams genArgs <&> first (.fqn)
+        let ts = xs <&> second (substituteGenerics gpMap)
+        pure (name, toList ts)
       _ -> throw sr "Expected a record"
 
     fields' <- forM fields $ \((fieldName, nameSr), d) -> do
