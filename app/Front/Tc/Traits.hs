@@ -144,14 +144,15 @@ visitBlockDecl outerCtx blkTDef = do
             unless (all (== t0) ts)
               $ throw blkTDef.name ("The trait " <> un (tFqnToName fqn) <> " is included multiple times")
 
-      let x = (gps, forType, blkFqn, ctxWithGenParams, traitsListFromList traits', names, wh)
+      let blkCtx = ctxWithGenParams {block = Just (name, forType), blockWhereClauses = wh}
+
+      let x = (gps, forType, blkFqn, blkCtx, traitsListFromList traits', names, wh)
       addBlockDeclCache outerCtx.namespace name x
 
       -- When a generic trait is initialised in a trait/module trait dep list, the dep trait/mod's own
       -- where clauses must be satisfiable with the provided generic args
       -- I.e. mod SomeModule [A] : SomeTrait[A] -- A might not support Eq!!
       -- trait SomeTrait [A] where A : Eq
-      let blkCtx = ctxWithGenParams {block = Just (name, forType), blockWhereClauses = wh}
       forM_ (HS.toList $ HS.fromList traits') $ \(traitFqn, genArgs) -> do
         trait <- getTrait blkCtx.tcIn traitFqn
         let gpMap = zip (trait.genParams <&> (.fqn)) genArgs
@@ -232,9 +233,7 @@ lookupMembVNameInCtxWhere ctx t name = do
 
 visitTrait :: (MonadTc m) => Ctx -> A.TDef -> [A.VDef] -> HashMap OpName (List1 A.VDef) -> m H.Trait
 visitTrait outerCtx tDef vDefs opMap = do
-  (genParams, selfType, blkFqn, ctxWithGenParams, traits, recursiveNames, wh) <- visitBlockDecl outerCtx tDef
-
-  let blkCtx = ctxWithGenParams {block = Just (fst tDef.name, selfType)}
+  (genParams, selfType, blkFqn, blkCtx, traits, recursiveNames, wh) <- visitBlockDecl outerCtx tDef
 
   vDefs' <- forM vDefs $ \astVDef -> do
     (_, vDef) <- visitVDef blkCtx astVDef wh

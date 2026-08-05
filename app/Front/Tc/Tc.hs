@@ -144,9 +144,8 @@ typeCheckPackage' = do
         A.BuiltinTypeDecl -> pure ()
         A.Trait {} -> pure ()
         A.Module _ vDefs _ _ -> do
-          (_, forType, _, ctxWithGenParams, _, _, wh) <- visitBlockDecl outerCtx tDef
+          (_, _, _, modCtx, _, _, wh) <- visitBlockDecl outerCtx tDef
 
-          let modCtx = ctxWithGenParams {block = Just (fst tDef.name, forType)}
           forM_ (toList vDefs.nameMap) $ \(_, astVDef) -> do
             (vFqn, vDef) <- visitVDef modCtx astVDef wh
 
