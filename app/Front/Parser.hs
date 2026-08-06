@@ -600,22 +600,22 @@ parseTraitsWhsInner = do
 
   _ <- outdent
 
-  vDefsMap <- newVar def
+  namesMap <- newVar def
   opsMap <- newVar def
   vDefsRev <- newVar []
   forM_ (zip [0 ..] defs) $ \(idx, vDef'@(A.VDef {A.name = (name', sr), A.op = opMaybe})) -> do
-    xs <- getVar vDefsMap
+    xs <- getVar namesMap
     when (name' `elem` HM.keys xs) $ throw sr "Duplicate name"
     let vDef = vDef' {A.idx}
-    modVar vDefsMap $ HM.insert name' $ vDef
+    modVar namesMap $ HM.insert name' $ vDef
     modVar vDefsRev (vDef :)
     forM_ opMaybe $ \(op, _) ->
       modVar opsMap $ HM.insertWith (<>) op (List1 vDef [])
 
-  vDefsList' <- getVar vDefsMap
+  namesMap' <- getVar namesMap
   opsList' <- getVar opsMap
   vDefsOrdered <- getVar vDefsRev <&> reverse
-  pure (traits, vDefsOrdered, vDefsList', opsList', wh)
+  pure (traits, vDefsOrdered, namesMap', opsList', wh)
 
 whereClause :: (Args) => IO (A.TypeExpr, A.TypeExpr)
 whereClause = do
