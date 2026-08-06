@@ -122,7 +122,7 @@ constFoldInlineExpr startingVars exprToOpt = do
         M.EUnreachable {} -> pure (expr, Nothing)
         M.EBreak {} -> pure (expr, Nothing)
         M.EContinue {} -> pure (expr, Nothing)
-        M.EMkVec xs -> do
+        M.EVec xs -> do
           xs' <- forM xs $ go vars
           let knownConstsMaybe = forM xs' $ (snd >>> (\case Just (KnownConst c) -> Just c; _ -> Nothing))
           case knownConstsMaybe of
@@ -130,7 +130,7 @@ constFoldInlineExpr startingVars exprToOpt = do
               let c = M.CVec cs
               pure ((M.ELoadConst c, snd expr), Just $ KnownConst c)
             _ ->
-              pure ((M.EMkVec $ fst <$> xs', snd expr), Nothing)
+              pure ((M.EVec $ fst <$> xs', snd expr), Nothing)
         M.EFnCall callee ps isAsync retType -> do
           (callee', calleeValue) <- go vars callee
           ps' <- forM ps $ go vars
@@ -349,9 +349,9 @@ renameExpr startingUidMap exprToRename = do
           let uid' = fromMaybe uid $ lookup uid uidMap
           pure (M.EVar uid', sr)
         M.ELoadConst {} -> pure expr
-        M.EMkVec xs -> do
+        M.EVec xs -> do
           xs' <- forM xs $ go uidMap
-          pure (M.EMkVec xs', sr)
+          pure (M.EVec xs', sr)
         M.EGlobal {} -> pure expr
         M.EClosure fn -> do
           params <- forM fn.params $ \(_, a, b, c) -> do
@@ -465,7 +465,7 @@ renameExpr startingUidMap exprToRename = do
 weighExpression :: M.Expr -> Int
 weighExpression (e, _) = case e of
   M.ELoadConst {} -> 1
-  M.EMkVec xs -> 2 + sum (weighExpression <$> xs)
+  M.EVec xs -> 2 + sum (weighExpression <$> xs)
   M.EVar {} -> 1
   M.EGlobal {} -> 1
   M.EClosure fn -> 1 + length fn.params + weighExpression fn.expr

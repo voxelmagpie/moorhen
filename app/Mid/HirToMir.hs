@@ -295,7 +295,7 @@ mkApplyWhereClausesExpr sr t' ts defExpr = do
             pure (M.EIndex indexed1 whereClauseTraitIdx Nothing, sr)
           H.FromModule modFqn _genArgs modWhs -> do
             pkg <- getPkg $ tFqnToPkg modFqn
-            modWhs' <- forM modWhs g <&> \x -> (M.EMkVec x, sr)
+            modWhs' <- forM modWhs g <&> \x -> (M.EVec x, sr)
             trait <- getTrait traitFqn
             let traitNamesOrdered = trait.vDefs <&> ((.vDef.name) >>> fst)
             let fqns = traitNamesOrdered <&> \n -> VFqn $ un modFqn <> "." <> un n
@@ -309,14 +309,14 @@ mkApplyWhereClausesExpr sr t' ts defExpr = do
                     vDefType <- cvtType vDef.type'
                     pure (M.EFnCall e' [modWhs'] a vDefType, sr)
 
-            pure (M.EMkVec exprs', sr)
-        pure (M.EMkVec ys, sr)
+            pure (M.EVec exprs', sr)
+        pure (M.EVec ys, sr)
 
   if null ts
     then pure defExpr
     else do
       xs <- forM ts $ \xs -> g xs
-      pure (M.EFnCall defExpr [(M.EMkVec xs, sr)] a t', sr)
+      pure (M.EFnCall defExpr [(M.EVec xs, sr)] a t', sr)
 
 cvtExpr :: forall m. (MonadToMir m) => H.Expr -> m M.Expr
 cvtExpr (e, t, sr) = do
@@ -328,7 +328,7 @@ cvtExpr (e, t, sr) = do
     H.ELitFloat x -> pure $ M.ELoadConst $ M.CFloat x
     H.ELitList xs -> do
       xs' <- forM xs cvtExpr
-      pure $ M.EMkVec xs'
+      pure $ M.EVec xs'
     H.EVar id -> do
       pure $ M.EVar $ M.LocalVarUid $ un id
     H.EGlobal {}

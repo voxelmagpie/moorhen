@@ -277,7 +277,7 @@ trConst c =
 trExpr :: (MonadTr m) => M.Expr -> m Text
 trExpr (e, sr) = case e of
   M.ELoadConst c -> trConst c
-  M.EMkVec es -> buildJsListFromExprs sr es
+  M.EVec es -> buildJsListFromExprs sr es
   M.EVar uid -> pure $ uidToText uid
   M.EGlobal fqn -> do
     vDef <- getVDef fqn

@@ -88,7 +88,7 @@ data VDef = VDef
 
 data Expr'
   = ELoadConst Const
-  | EMkVec [Expr]
+  | EVec [Expr]
   | EVar LocalVarUid
   | EGlobal VFqn
   | EClosure Fn
