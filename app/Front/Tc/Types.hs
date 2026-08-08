@@ -202,6 +202,12 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
           $ throw sr "Cannot apply generics to type (higher-kinded types are not supported)"
         pure t
       NlAstTypeDef outerCtx astTDef -> do
+        case astTDef.tDef of
+          A.TypeAliasDecl {} -> pure ()
+          A.TypeDecl {} -> pure ()
+          A.BuiltinTypeDecl {} -> pure ()
+          A.Trait {} -> throw sr "Expected type, got trait"
+          A.Module {} -> throw sr "Expected type, got module"
         (tFqn, tDef1) <- visitTDef1 outerCtx astTDef
         unless (length tDef1.genParams == length genArgs')
           $ throw sr "Wrong number of generic arguments for type"
@@ -213,6 +219,10 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
           else
             pure $ H.TNamed tFqn genArgs'
       NlTypeDef pkgName (H.TNameExport {fqn, typ}) -> do
+        case typ of
+          H.IsTypeDef -> pure ()
+          H.IsTrait _ -> throw sr "Expected type, got trait"
+          H.IsModule _ -> throw sr "Expected type, got module"
         unless (typ == H.IsTypeDef) $ throw sr "Expected type"
         pkg <- getDepPkg pkgName
         tDef1 <- getTDef1Maybe pkg fqn <&> must

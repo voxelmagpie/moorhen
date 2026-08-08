@@ -310,3 +310,10 @@ mod X for Int : Trait[Y]
 	let f = Y(1)
 
 data Y (Int)
+
+// --- //
+
+mod Foo for Int
+	let x : Int = 3
+
+let f : Foo = undefined
