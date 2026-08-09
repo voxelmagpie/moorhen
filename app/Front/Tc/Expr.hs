@@ -32,6 +32,9 @@ import Names
 import SrcLoc (SrcRange, srcRangeOf)
 import Vars
 
+-- It is safe to use these TNamed values without calling the visit type def function as the builtins package has already
+-- been type checked as #builtins does not contain any expressions + type definitions are visited before expressions
+
 anyType :: H.Type
 anyType = H.TNamed (TFqn "#builtins/:Any") []
 
@@ -49,6 +52,18 @@ unitType = H.TNamed (TFqn "#builtins/:Unit") []
 
 unreachableType :: H.Type
 unreachableType = H.TNamed (TFqn "#builtins/:Unreachable") []
+
+intType :: H.Type
+intType = H.TNamed (TFqn "#builtins/:Int") []
+
+i32Type :: H.Type
+i32Type = H.TNamed (TFqn "#builtins/:I32") []
+
+stringType :: H.Type
+stringType = H.TNamed (TFqn "#builtins/:String") []
+
+realType :: H.Type
+realType = H.TNamed (TFqn "#builtins/:Real") []
 
 -- Changes to this type signature must be mirrored in Expr.hs-boot
 visitExpr :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
@@ -85,32 +100,32 @@ visitELitInt :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, Ha
 visitELitInt _ typeHint (theExpr, sr) = case theExpr of
   A.ELitInt i -> do
     case typeHint of
-      TNamedP (TFqn x@"#builtins/:I32") _
+      TNamedP (TFqn "#builtins/:I32") _
         | i >= -2147483648 && i <= 2147483647 ->
-            pure ((H.ELitInt32 $ fromIntegral i, H.TNamed (TFqn x) [], sr), def)
-      TNamedP (TFqn x@"#builtins/:Real") _
+            pure ((H.ELitInt32 $ fromIntegral i, i32Type, sr), def)
+      TNamedP (TFqn "#builtins/:Real") _
         | i >= -9007199254740992 && i <= 9007199254740992 ->
-            pure ((H.ELitFloat $ tShow i, H.TNamed (TFqn x) [], sr), def)
+            pure ((H.ELitFloat $ tShow i, realType, sr), def)
       _ ->
-        pure ((H.ELitInt i, H.TNamed (TFqn "#builtins/:Int") [], sr), def)
+        pure ((H.ELitInt i, intType, sr), def)
   _ -> undefined
 
 visitELitFloat :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
 visitELitFloat _ _ (theExpr, sr) = case theExpr of
   A.ELitFloat f ->
-    pure ((H.ELitFloat f, H.TNamed (TFqn "#builtins/:Real") [], sr), def)
+    pure ((H.ELitFloat f, realType, sr), def)
   _ -> undefined
 
 visitELitBool :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
 visitELitBool _ _ (theExpr, sr) = case theExpr of
   A.ELitBool b ->
-    pure ((H.ELitBool b, H.TNamed (TFqn "#builtins/:Bool") [], sr), def)
+    pure ((H.ELitBool b, boolType, sr), def)
   _ -> undefined
 
 visitELitString :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
 visitELitString _ _ (theExpr, sr) = case theExpr of
   A.ELitString s ->
-    pure ((H.ELitString s, H.TNamed (TFqn "#builtins/:String") [], sr), def)
+    pure ((H.ELitString s, stringType, sr), def)
   _ -> undefined
 
 visitELitList :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)

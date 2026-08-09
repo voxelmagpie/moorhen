@@ -4,7 +4,7 @@
 
 module Front.Tc.Types where
 
-import Control.Monad (forM, unless, when)
+import Control.Monad (forM, unless, void, when)
 import Data.HashMap.Strict qualified as HM
 import Data.HashSet qualified as HS
 import Data.Maybe (isNothing)
@@ -172,7 +172,10 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
     r' <- visitTypeExpr ctx r
     e <- visitTypeExpr ctx (A.TEffect astEffects, sr)
     pure $ H.TFunc ps' r' e
-  A.TUnit ->
+  A.TUnit -> do
+    (thisPkgName, _) <- getThisPkg
+    when (un thisPkgName == "#builtins") $ do
+      void $ visitTypeExpr ctx (A.TNamed (TName "Unit", sr) [], sr)
     pure $ H.TNamed (TFqn "#builtins/:Unit") []
   A.TTuple ts -> do
     ts' <- forM ts $ visitTypeExpr ctx
