@@ -61,8 +61,7 @@ visitVDef outerCtx astVDef implsWheres = do
             when (HM.member n outerCtx.tNameToGp)
               $ throw sr "Duplicate generic parameter name"
 
-          let newGp = visitGenericParams (un fqn) astVDef.genParams
-          addGenParamTDefs newGp
+          newGp <- mkGenParams (Fqn $ un fqn) astVDef.genParams
 
           let gp = outerCtx.genParams <> newGp
           let ctx =
@@ -87,8 +86,7 @@ visitVDef outerCtx astVDef implsWheres = do
             $ "Implementations of trait definitions may not specify generic parameters or types\n"
             <> "These are already in the trait definition"
 
-          let newGp = vDef.genParams <&> \gp -> mkGenParam (un fqn) gp.kind (tFqnToName gp.fqn, gp.sr)
-          addGenParamTDefs newGp
+          newGp <- mkGenParams (Fqn $ un fqn) $ vDef.genParams <&> \gp -> (gp.kind, (tFqnToName gp.fqn, gp.sr))
 
           let selfFqn = case trait.selfType.type' of H.TNamed x _ -> x; _ -> undefined
           let gpMap =

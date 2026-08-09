@@ -95,8 +95,7 @@ visitBlockDecl outerCtx blkTDef = do
     Just x -> pure x
     _ -> do
       let blkFqn = TFqn $ un outerCtx.namespace <> ":" <> un name
-      let gps = visitGenericParams (un blkFqn) blkTDef.genParams
-      addGenParamTDefs gps
+      gps <- mkGenParams (Fqn $ un blkFqn) blkTDef.genParams
 
       let ctxWithGenParams =
             outerCtx

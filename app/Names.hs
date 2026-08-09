@@ -58,12 +58,6 @@ nameToVNameOrTName :: Name -> Either VName TName
 nameToVNameOrTName (Name n) | isAsciiUpper $ T.head n = Right $ TName n
 nameToVNameOrTName (Name n) = Left $ VName n
 
--- isTName :: Name -> Bool
--- isTName t = isAsciiUpper $ T.head $ un t
-
--- textToName :: Text -> Either VName TName
--- textToName t = if isTName (Name t) then Right $ TName t else Left $ VName t
-
 -- TName or VName
 newtype Name = Name Text
   deriving (Show, Generic)
@@ -116,6 +110,12 @@ tFqnToNamespace (TFqn x) = Namespace $ T.takeWhile (/= ':') x
 
 tFqnToName :: TFqn -> TName
 tFqnToName = un >>> T.takeWhileEnd (/= ':') >>> T.takeWhileEnd (/= '.') >>> TName
+
+-- VFqn or TFqn
+newtype Fqn = Fqn Text
+  deriving (Show, Generic)
+  deriving newtype (Eq, Hashable)
+  deriving anyclass (Newtype)
 
 newtype Attribute = Attribute Text
   deriving (Show, Generic)

@@ -20,16 +20,12 @@ import Names
 import SrcLoc (SrcRange)
 import Vars
 
-mkGenParam :: Text -> TypeKind -> TNameL -> H.GenParam
-mkGenParam fqn k (n, sr) =
-  let mkFqn :: TName -> TFqn
-      mkFqn (TName n') = TFqn $ fqn <> "$" <> n'
-   in H.GenParam (mkFqn n) sr (H.TNamed (mkFqn n) []) k
-
--- Converts source-level generic parameter names to HIR representations
--- Generates fully qualified names for each generic parameter
-visitGenericParams :: Text -> [(TypeKind, TNameL)] -> [H.GenParam]
-visitGenericParams fqn astGps = astGps <&> uncurry (mkGenParam fqn)
+mkGenParams :: (MonadTc m) => Fqn -> [(TypeKind, TNameL)] -> m [H.GenParam]
+mkGenParams typeFqn gArgs = forM gArgs $ \(k, n@(TName n', sr)) -> do
+  let fqn = TFqn $ un typeFqn <> "$" <> n'
+  let t = H.TNamed fqn []
+  addTDef1 fqn $ H.TDef1 n fqn [] t False k True False
+  pure $ H.GenParam fqn sr t k
 
 -- Replaces generic type parameters with concrete types throughout a type
 substituteGenerics :: [(TFqn, H.Type)] -> H.Type -> H.Type

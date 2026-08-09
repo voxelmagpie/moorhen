@@ -4,7 +4,7 @@
 
 module Front.Tc.Types where
 
-import Control.Monad (forM, forM_, unless, when)
+import Control.Monad (forM, unless, when)
 import Data.HashMap.Strict qualified as HM
 import Data.HashSet qualified as HS
 import Data.Maybe (isNothing)
@@ -97,8 +97,7 @@ visitTDef1 outerCtx astTDef = do
     Just x ->
       pure (fqn, x)
     _ -> do
-      let gps = visitGenericParams (un fqn) astTDef.genParams
-      addGenParamTDefs gps
+      gps <- mkGenParams (Fqn $ un fqn) astTDef.genParams
 
       d <- case astTDef.tDef of
         A.TypeAliasDecl astType -> do
@@ -240,11 +239,6 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
       Just var -> do
         pure $ H.TLifetime var.closureDepth
       _ -> throw sr $ "No such local variable: " <> un name
-
--- TODO Merge visitGenericParams into addGenParamTDefs?
-addGenParamTDefs :: (MonadTc m) => [H.GenParam] -> m ()
-addGenParamTDefs xs = forM_ xs $ \gp -> do
-  addTDef1 gp.fqn $ H.TDef1 (tFqnToName gp.fqn, gp.sr) gp.fqn [] gp.type' False gp.kind True False
 
 verifyEffectAndConvertToList :: (MonadTc m, HasCallStack) => H.Type -> m (Maybe [H.Type])
 verifyEffectAndConvertToList t = case t of
