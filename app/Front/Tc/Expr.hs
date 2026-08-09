@@ -235,10 +235,10 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
                 let gps' = vDef.genParams <&> (.fqn)
                 pure $ Right $ genericTypeToPType (zip gps' gpHints) vDef.type'
       A.EDataCons name [] ->
-        getDataCons' ctx typeHint name $ \fqn tDef2 -> do
-          (H.DataCons _ dcContents, dcIdx) <- findDConsInType name tDef2
+        getDataCons' ctx typeHint name $ \fqn dataTypeDef -> do
+          (H.DataCons _ dcContents, dcIdx) <- findDConsInType name dataTypeDef
           genericType <- case dcContents of
-            H.TupleFields xs | notNull xs -> pure $ H.TFunc xs tDef2.t1.selfType (H.TEffect def)
+            H.TupleFields xs | notNull xs -> pure $ H.TFunc xs dataTypeDef.t1.selfType (H.TEffect def)
             _ -> throw sr "data constructor is not callable"
           let dcInfo =
                 H.DataConsInfo
@@ -246,14 +246,14 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
                     dcName = fst name,
                     dcIdx,
                     isFn = True,
-                    isProduct = length tDef2.dataCons == 1,
-                    isEnum = tDef2.isEnumType
+                    isProduct = length dataTypeDef.dataCons == 1,
+                    isEnum = dataTypeDef.isEnumType
                   }
-          if null tDef2.t1.genParams
+          if null dataTypeDef.t1.genParams
             then
               pure $ Left ((H.EDataCons dcInfo, genericType, sr), def)
             else do
-              let gps = tDef2.t1.genParams
+              let gps = dataTypeDef.t1.genParams
               let gps' = gps <&> (.fqn)
               let paramHints = replicate (length astArgsExprs) TUnknown
               let h = TFuncP paramHints typeHint TUnknown
@@ -641,10 +641,10 @@ visitEIndex ctx _ (theExpr, sr) = case theExpr of
     ts <- case t of
       H.TTuple ts -> pure $ toList ts
       H.TNamed {} -> do
-        (tDef2, (_, genArgs)) <- getTDef2 ctx (snd e) t
-        case tDef2.dataCons of
+        (dataTypeDef, (_, genArgs)) <- getTDef2 ctx (snd e) t
+        case dataTypeDef.dataCons of
           List1 (H.DataCons _ (H.TupleFields ts)) [] -> do
-            let gpMap = zip (tDef2.t1.genParams <&> (.fqn)) genArgs
+            let gpMap = zip (dataTypeDef.t1.genParams <&> (.fqn)) genArgs
             pure $ substituteGenerics gpMap <$> ts
           _ -> throw sr "Not a tuple or tuple-like data type"
       _ -> throw sr "Not a tuple or named type"
@@ -656,10 +656,10 @@ visitEFieldAccess :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Exp
 visitEFieldAccess ctx _ (theExpr, sr) = case theExpr of
   A.EFieldAccess e fieldName -> do
     (e'@(_, recordType, _), eff) <- visitExpr ctx TUnknown e
-    (tDef2, (_, genArgs)) <- getTDef2 ctx (snd e) recordType
-    fields <- case tDef2.dataCons of
+    (dataTypeDef, (_, genArgs)) <- getTDef2 ctx (snd e) recordType
+    fields <- case dataTypeDef.dataCons of
       List1 (H.DataCons _ (H.RecordFields fs)) [] -> do
-        let gpMap = zip (tDef2.t1.genParams <&> (.fqn)) genArgs
+        let gpMap = zip (dataTypeDef.t1.genParams <&> (.fqn)) genArgs
         pure $ fs <&> second (substituteGenerics gpMap)
       _ -> throw fieldName $ "Cannot access field '" <> un (fst fieldName) <> "' in value with non-record type"
 
@@ -762,14 +762,14 @@ visitEUpdate ctx _ (theExpr, sr) = case theExpr of
                   buildUpdatePart t' $ currentPrefix <> [A.AccessorChainIndex i]
                 pure $ H.EUpdateTuple $ list2ToList1 parts
               H.TNamed tFqn genArgs -> do
-                tDef1 <- getTDef1 sr t
-                if tDef1.isBuiltin || tDef1.isGenericParameter || tDef1.typeKind /= MonoType
+                tDef <- getTDef sr t
+                if tDef.isBuiltin || tDef.isGenericParameter || tDef.typeKind /= MonoType
                   then
                     pure H.EUpdateNoChange
                   else do
-                    (tDef2, _) <- getTDef2 ctx sr t
-                    let gpMap = zip (tDef2.t1.genParams <&> (.fqn)) genArgs
-                    case tDef2.dataCons of
+                    (dataTypeDef, _) <- getTDef2 ctx sr t
+                    let gpMap = zip (dataTypeDef.t1.genParams <&> (.fqn)) genArgs
+                    case dataTypeDef.dataCons of
                       List1 (H.DataCons _ (H.TupleFields [])) _ ->
                         throw sr "Cannot update empty types"
                       List1 (H.DataCons _ (H.TupleFields (t0 : ts))) _ -> do
@@ -786,7 +786,7 @@ visitEUpdate ctx _ (theExpr, sr) = case theExpr of
                           p <- buildUpdatePart fieldType $ currentPrefix <> [A.AccessorChainName fieldName]
                           pure (fieldName, p)
                         let dCons =
-                              H.DataConsInfo tFqn (fst tDef2.t1.name) 0 False True tDef2.isEnumType
+                              H.DataConsInfo tFqn (fst dataTypeDef.t1.name) 0 False True dataTypeDef.isEnumType
                         pure $ H.EUpdateRecord dCons parts
                       List1 _ (_ : _) ->
                         throw sr "Update not supported for types with multiple data constructors"
@@ -830,11 +830,11 @@ visitEAs ctx _ (theExpr, sr) = case theExpr of
       (H.TNamed fromFqn _, H.TNamed toFqn []) | isNumericType fromFqn && isNumericType toFqn -> do
         pure (H.ECastNumber e', toType, sr)
       (H.TNamed {}, H.TNamed toFqn []) | isIntType toFqn -> do
-        tDef1 <- getTDef1 sr actType
-        if not tDef1.isBuiltin
+        tDef <- getTDef sr actType
+        if not tDef.isBuiltin
           then do
-            (tDef2, _) <- getTDef2 ctx sr actType
-            if tDef2.isEnumType
+            (dataTypeDef, _) <- getTDef2 ctx sr actType
+            if dataTypeDef.isEnumType
               then do
                 pure (H.ECastNumber e', toType, sr)
               else
@@ -844,14 +844,14 @@ visitEAs ctx _ (theExpr, sr) = case theExpr of
     pure (e'', ef)
   _ -> undefined
 
-getTDef1 :: (MonadTc m, HasCallStack) => SrcRange -> H.Type -> m H.TDef1
-getTDef1 sr t = case t of
+getTDef :: (MonadTc m, HasCallStack) => SrcRange -> H.Type -> m H.TDef
+getTDef sr t = case t of
   H.TNamed fqn _ -> do
     let pkg = tFqnToPkg fqn
     -- Look up the type definition
     (thisPkg, thisPkg') <- getThisPkg
     pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
-    getTDef1Maybe pkg' fqn <&> must
+    getTDefMaybe pkg' fqn <&> must
   _ -> throw sr "Not a named type"
 
 visitStmt :: (MonadTc m) => Var m Ctx -> PType -> A.Stmt -> m (H.Stmt, HashSet H.Type)

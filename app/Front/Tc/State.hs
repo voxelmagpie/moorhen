@@ -30,12 +30,12 @@ class (MonadVars m, MonadTcError m) => MonadTcImports m where
 
 class (MonadTcImports m) => MonadTc m where
   getThisPkg :: m (PkgName, Pkg m)
-  getTDef1Maybe :: Pkg m -> TFqn -> m (Maybe H.TDef1)
-  getTDef2Maybe :: Pkg m -> TFqn -> m (Maybe H.TDef2)
+  getTDefMaybe :: Pkg m -> TFqn -> m (Maybe H.TDef)
+  getDataTypeDefMaybe :: Pkg m -> TFqn -> m (Maybe H.DataTypeDef)
   getVDefMaybe :: Pkg m -> VFqn -> m (Maybe H.VDef)
   inputs :: m Inputs
-  addTDef1 :: TFqn -> H.TDef1 -> m ()
-  addTDef2 :: TFqn -> H.TDef2 -> m ()
+  addTDef :: TFqn -> H.TDef -> m ()
+  addDataTypeDef :: TFqn -> H.DataTypeDef -> m ()
   addVDef :: VFqn -> H.VDef -> m ()
   addVDefExpr :: VFqn -> H.Expr -> Int -> m ()
   addExportedDefs :: Namespace -> [(VName, VFqn)] -> [(TName, H.TNameExport)] -> [H.Module] -> m ()

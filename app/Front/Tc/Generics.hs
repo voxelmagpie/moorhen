@@ -24,7 +24,7 @@ mkGenParams :: (MonadTc m) => Fqn -> [(TypeKind, TNameL)] -> m [H.GenParam]
 mkGenParams typeFqn gArgs = forM gArgs $ \(k, n@(TName n', sr)) -> do
   let fqn = TFqn $ un typeFqn <> "$" <> n'
   let t = H.TNamed fqn []
-  addTDef1 fqn $ H.TDef1 n fqn [] t False k True False
+  addTDef fqn $ H.TDef n fqn [] t False k True False
   pure $ H.GenParam fqn sr t k
 
 -- Replaces generic type parameters with concrete types throughout a type
@@ -79,7 +79,7 @@ tryCheckGenArgKinds xs = do
         let pkg = tFqnToPkg fqn
         (thisPkg, thisPkg') <- getThisPkg
         pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
-        tDef <- getTDef1Maybe pkg' fqn <&> must
+        tDef <- getTDefMaybe pkg' fqn <&> must
         shouldBe tDef.typeKind
   getVar errMaybe <&> \case Just e -> Left e; _ -> Right ()
 

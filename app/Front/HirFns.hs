@@ -25,7 +25,7 @@ showHir ir = do
     vs' <- HT.toList vs
     ts' <- HT.toList ts
     pure (ns, (vs', ts'))
-  ir' <- Hir' x <$> HT.toList ir.vDefs <*> HT.toList ir.vDefExpr <*> HT.toList ir.tDefs1 <*> HT.toList ir.tDefs2
+  ir' <- Hir' x <$> HT.toList ir.vDefs <*> HT.toList ir.vDefExpr <*> HT.toList ir.tDefs1 <*> HT.toList ir.dataTypeDefs
   pure $ tShow ir'
 
 typeToText' :: Bool -> Type -> Text

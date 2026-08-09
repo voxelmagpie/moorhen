@@ -83,8 +83,8 @@ typeContainsMutVarsEffect = \case
   H.TLifetime _ -> False
 
 -- Visits a type definition (first phase), handles type aliases
-visitTDef1 :: (MonadTc m) => Ctx -> A.TDef -> m (TFqn, H.TDef1)
-visitTDef1 outerCtx astTDef = do
+visitTDef :: (MonadTc m) => Ctx -> A.TDef -> m (TFqn, H.TDef)
+visitTDef outerCtx astTDef = do
   assertM $ isNothing outerCtx.block
   assertM $ null outerCtx.genParams
 
@@ -93,7 +93,7 @@ visitTDef1 outerCtx astTDef = do
   let fqn = TFqn $ un outerCtx.namespace <> ":" <> un name
   (_, thisPkg) <- getThisPkg
 
-  getTDef1Maybe thisPkg fqn >>= \case
+  getTDefMaybe thisPkg fqn >>= \case
     Just x ->
       pure (fqn, x)
     _ -> do
@@ -110,7 +110,7 @@ visitTDef1 outerCtx astTDef = do
                   }
           t <- visitTypeExpr ctx astType
           let k = case t of H.TEffect {} -> EffectType; _ -> MonoType
-          pure $ H.TDef1 astTDef.name fqn gps t True k False isBuiltin
+          pure $ H.TDef astTDef.name fqn gps t True k False isBuiltin
         _ -> do
           when isBuiltin $ do
             let knownTypes = ["Real", "I32", "Int", "Bool", "Unit", "String", "Lazy", "Any", "Vec", "Unreachable"]
@@ -122,32 +122,32 @@ visitTDef1 outerCtx astTDef = do
 
           let t = H.TNamed fqn $ gps <&> (.type')
           let k = if astTDef.isEffect then EffectType else MonoType
-          pure $ H.TDef1 astTDef.name fqn gps t False k False isBuiltin
+          pure $ H.TDef astTDef.name fqn gps t False k False isBuiltin
 
-      addTDef1 fqn d
+      addTDef fqn d
       pure (fqn, d)
 
 -- Visits a type definition (second phase)
 -- Processes data constructors and builds complete type definition
 -- Handles builtin types and regular type declarations, not type aliases or impl blocks
-visitTDef2 :: (MonadTc m) => Ctx -> A.TDef -> m (TFqn, H.TDef2)
-visitTDef2 outerCtx astTDef = do
-  (fqn, tDef1) <- visitTDef1 outerCtx astTDef
+visitDataTypeDef :: (MonadTc m) => Ctx -> A.TDef -> m (TFqn, H.DataTypeDef)
+visitDataTypeDef outerCtx astTDef = do
+  (fqn, tDef) <- visitTDef outerCtx astTDef
   (_, thisPkg) <- getThisPkg
-  getTDef2Maybe thisPkg fqn >>= \case
+  getDataTypeDefMaybe thisPkg fqn >>= \case
     Just d ->
       pure (fqn, d)
     _ -> do
       let ctx =
             outerCtx
               { fqn = Just $ Right fqn,
-                genParams = tDef1.genParams,
-                tNameToGp = HM.fromList $ zip ((snd >>> fst) <$> astTDef.genParams) tDef1.genParams,
-                thisDefType = Just tDef1.selfType
+                genParams = tDef.genParams,
+                tNameToGp = HM.fromList $ zip ((snd >>> fst) <$> astTDef.genParams) tDef.genParams,
+                thisDefType = Just tDef.selfType
               }
       d <- case astTDef.tDef of
         A.TypeAliasDecl _ ->
-          error "Aliases handled in visitTDef1"
+          error "Aliases handled in visitTDef"
         A.TypeDecl astDataCons _ -> do
           conss <- forM astDataCons $ \(A.DataCons dConsName fieldsOrRecord) -> case fieldsOrRecord of
             A.RecordFields fields -> do
@@ -157,11 +157,11 @@ visitTDef2 outerCtx astTDef = do
               types <- forM fields $ \t -> visitTypeExpr ctx t
               pure $ H.DataCons dConsName $ H.TupleFields types
           let typeIsEnum dataCons = flip all dataCons $ \case H.DataCons _ (H.TupleFields []) -> True; _ -> False
-          pure $ H.TDef2 tDef1 conss $ typeIsEnum conss
+          pure $ H.DataTypeDef tDef conss $ typeIsEnum conss
         A.BuiltinTypeDecl -> undefined
         A.Module {} -> undefined
         A.Trait {} -> undefined
-      addTDef2 fqn d
+      addDataTypeDef fqn d
       pure (fqn, d)
 
 -- Converts AST type expressions to HIR types
@@ -210,14 +210,14 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
           A.BuiltinTypeDecl {} -> pure ()
           A.Trait {} -> throw sr "Expected type, got trait"
           A.Module {} -> throw sr "Expected type, got module"
-        (tFqn, tDef1) <- visitTDef1 outerCtx astTDef
-        unless (length tDef1.genParams == length genArgs')
+        (tFqn, tDef) <- visitTDef outerCtx astTDef
+        unless (length tDef.genParams == length genArgs')
           $ throw sr "Wrong number of generic arguments for type"
-        checkGenArgKinds $ zip tDef1.genParams $ zip genArgs' $ snd <$> genArgs
-        if tDef1.isAlias
+        checkGenArgKinds $ zip tDef.genParams $ zip genArgs' $ snd <$> genArgs
+        if tDef.isAlias
           then do
-            let gps = tDef1.genParams <&> (.fqn)
-            pure $ substituteGenerics (zip gps genArgs') tDef1.selfType
+            let gps = tDef.genParams <&> (.fqn)
+            pure $ substituteGenerics (zip gps genArgs') tDef.selfType
           else
             pure $ H.TNamed tFqn genArgs'
       NlTypeDef pkgName (H.TNameExport {fqn, typ}) -> do
@@ -227,14 +227,14 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
           H.IsModule _ -> throw sr "Expected type, got module"
         unless (typ == H.IsTypeDef) $ throw sr "Expected type"
         pkg <- getDepPkg pkgName
-        tDef1 <- getTDef1Maybe pkg fqn <&> must
-        unless (length tDef1.genParams == length genArgs')
+        tDef <- getTDefMaybe pkg fqn <&> must
+        unless (length tDef.genParams == length genArgs')
           $ throw sr "Wrong number of generic arguments for type"
-        checkGenArgKinds $ zip tDef1.genParams $ zip genArgs' $ snd <$> genArgs
-        if tDef1.isAlias
+        checkGenArgKinds $ zip tDef.genParams $ zip genArgs' $ snd <$> genArgs
+        if tDef.isAlias
           then do
-            let gps = tDef1.genParams <&> (.fqn)
-            pure $ substituteGenerics (zip gps genArgs') tDef1.selfType
+            let gps = tDef.genParams <&> (.fqn)
+            pure $ substituteGenerics (zip gps genArgs') tDef.selfType
           else
             pure $ H.TNamed fqn genArgs'
   A.TLifetime name -> do
@@ -252,50 +252,50 @@ verifyEffectAndConvertToList t = case t of
     let pkg = tFqnToPkg fqn'
     (thisPkg, thisPkg') <- getThisPkg
     pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
-    tDef <- getTDef1Maybe pkg' fqn' <&> must
+    tDef <- getTDefMaybe pkg' fqn' <&> must
     pure $ if tDef.typeKind == EffectType then Just [t] else Nothing
   _ -> pure Nothing
 
-getTDef2 :: (MonadTc m, HasCallStack) => Ctx -> SrcRange -> H.Type -> m (H.TDef2, (TFqn, [H.Type]))
+getTDef2 :: (MonadTc m, HasCallStack) => Ctx -> SrcRange -> H.Type -> m (H.DataTypeDef, (TFqn, [H.Type]))
 getTDef2 ctx sr t = case t of
   H.TNamed fqn genArgs -> do
     let pkg = tFqnToPkg fqn
     -- Look up the type definition
     (thisPkg, thisPkg') <- getThisPkg
     pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
-    tDef1 <- getTDef1Maybe pkg' fqn <&> must
-    assertM $ tDef1.typeKind == MonoType
-    when tDef1.isGenericParameter $ throw sr "Cannot access data constructors or fields in generic parameters"
-    when tDef1.isBuiltin $ throw sr "Cannot access data constructors or fields in builtins"
-    tDef2 <-
+    tDef <- getTDefMaybe pkg' fqn <&> must
+    assertM $ tDef.typeKind == MonoType
+    when tDef.isGenericParameter $ throw sr "Cannot access data constructors or fields in generic parameters"
+    when tDef.isBuiltin $ throw sr "Cannot access data constructors or fields in builtins"
+    dataTypeDef <-
       if thisPkg == pkg
         then do
           let ns = tFqnToNamespace fqn
           let astAndImports@(ast, _) = must $ HM.lookup ns ctx.tcIn.allAsts
           let ctx' = mkFileCtx ns astAndImports ctx.tcIn
-          let astTDef = must $ HM.lookup (fst tDef1.name) ast.tDefs
-          visitTDef2 ctx' astTDef <&> snd
+          let astTDef = must $ HM.lookup (fst tDef.name) ast.tDefs
+          visitDataTypeDef ctx' astTDef <&> snd
         else
-          getTDef2Maybe pkg' fqn <&> must
-    pure (tDef2, (fqn, genArgs))
+          getDataTypeDefMaybe pkg' fqn <&> must
+    pure (dataTypeDef, (fqn, genArgs))
   _ -> throw sr "Not a named type"
 
-findDConsInType :: (MonadTc m) => TNameL -> H.TDef2 -> m (H.DataCons, Int)
-findDConsInType (name, nameSr) tDef2 =
-  case findWithIndex (\(H.DataCons (n, _) _) -> n == name) $ toList tDef2.dataCons of
+findDConsInType :: (MonadTc m) => TNameL -> H.DataTypeDef -> m (H.DataCons, Int)
+findDConsInType (name, nameSr) dataTypeDef =
+  case findWithIndex (\(H.DataCons (n, _) _) -> n == name) $ toList dataTypeDef.dataCons of
     Just y -> pure y
-    _ -> throw nameSr $ "No such data constructor '" <> un name <> "' in type " <> un (fst tDef2.t1.name)
+    _ -> throw nameSr $ "No such data constructor '" <> un name <> "' in type " <> un (fst dataTypeDef.t1.name)
 
 getDataConsFromType :: (MonadTc m) => Ctx -> H.Type -> TNameL -> m (H.DataConsInfo, H.Type, H.Fields)
 getDataConsFromType ctx t name@(_, nameSr) = do
-  (tDef2, (_, genArgs')) <- getTDef2 ctx nameSr t
-  (H.DataCons _ dcContents, dcIdx) <- findDConsInType name tDef2
-  let gpMap = zip tDef2.t1.genParams genArgs' <&> \(gp, a) -> (gp.fqn, a)
-  let tFqn = tDef2.t1.fqn
+  (dataTypeDef, (_, genArgs')) <- getTDef2 ctx nameSr t
+  (H.DataCons _ dcContents, dcIdx) <- findDConsInType name dataTypeDef
+  let gpMap = zip dataTypeDef.t1.genParams genArgs' <&> \(gp, a) -> (gp.fqn, a)
+  let tFqn = dataTypeDef.t1.fqn
   let dcFieldTypes = mkDConsFieldTypes dcContents gpMap
-  let isProduct = length tDef2.dataCons == 1
+  let isProduct = length dataTypeDef.dataCons == 1
   let isFn = case dcContents of H.TupleFields xs -> notNull xs; H.RecordFields {} -> False
-  pure (H.DataConsInfo tFqn (fst name) dcIdx isFn isProduct tDef2.isEnumType, t, dcFieldTypes)
+  pure (H.DataConsInfo tFqn (fst name) dcIdx isFn isProduct dataTypeDef.isEnumType, t, dcFieldTypes)
 
 mkDConsFieldTypes :: H.Fields -> [(TFqn, H.Type)] -> H.Fields
 mkDConsFieldTypes dcContents gpMap =
@@ -303,7 +303,7 @@ mkDConsFieldTypes dcContents gpMap =
     H.TupleFields xs -> H.TupleFields $ xs <&> substituteGenerics gpMap
     H.RecordFields xs -> H.RecordFields $ xs <&> second (substituteGenerics gpMap)
 
-getDataCons' :: (MonadTc m) => Ctx -> PType -> TNameL -> (TFqn -> H.TDef2 -> m a) -> m a
+getDataCons' :: (MonadTc m) => Ctx -> PType -> TNameL -> (TFqn -> H.DataTypeDef -> m a) -> m a
 getDataCons' ctx hint name@(_, nameSr) f = do
   let h = case hint of TFuncP {ret} -> ret; _ -> hint
   case h of
@@ -311,10 +311,10 @@ getDataCons' ctx hint name@(_, nameSr) f = do
       let pkgName = tFqnToPkg fqn
       (thisPkg, thisPkg') <- getThisPkg
       pkg <- if thisPkg == pkgName then pure thisPkg' else getDepPkg pkgName
-      tDef <- getTDef1Maybe pkg fqn <&> must
+      tDef <- getTDefMaybe pkg fqn <&> must
       when (tDef.isGenericParameter || tDef.isBuiltin) $ throw nameSr ("Cannot initialise type " <> un (fst tDef.name))
-      tDef2 <- getTDef2Maybe pkg fqn <&> must
-      f fqn tDef2
+      dataTypeDef <- getDataTypeDefMaybe pkg fqn <&> must
+      f fqn dataTypeDef
     _ -> do
       -- Try looking up the type name instead
       lookupTypeName ctx name >>= \case
@@ -325,31 +325,31 @@ getDataCons' ctx hint name@(_, nameSr) f = do
           case astTDef.tDef of
             A.BuiltinTypeDecl -> throw nameSr "Builtin types cannot be initialised in this way"
             _ -> pure ()
-          (tFqn, tDef2) <- visitTDef2 outerCtx astTDef
-          f tFqn tDef2
+          (tFqn, dataTypeDef) <- visitDataTypeDef outerCtx astTDef
+          f tFqn dataTypeDef
         NlTypeDef pkgName (H.TNameExport {fqn, typ}) -> do
           unless (typ == H.IsTypeDef) $ throw nameSr "Not a type"
           pkg <- getDepPkg pkgName
-          tDef1 <- getTDef1Maybe pkg fqn <&> must
-          when tDef1.isBuiltin $ throw nameSr "Builtin types cannot be initialised in this way"
-          tDef2 <- getTDef2Maybe pkg fqn <&> must
-          f fqn tDef2
+          tDef <- getTDefMaybe pkg fqn <&> must
+          when tDef.isBuiltin $ throw nameSr "Builtin types cannot be initialised in this way"
+          dataTypeDef <- getDataTypeDefMaybe pkg fqn <&> must
+          f fqn dataTypeDef
 
 -- Resolves a data constructor by name
 -- Infers generic arguments and returns constructor info, type, and field types
 getDataCons :: (MonadTc m) => Ctx -> PType -> TNameL -> [A.TypeExpr] -> m (H.DataConsInfo, H.Type, H.Fields)
 getDataCons ctx hint name@(_, nameSr) astGenArgs = do
-  getDataCons' ctx hint name $ \tFqn tDef2 -> do
-    (H.DataCons _ dcContents, dcIdx) <- findDConsInType name tDef2
-    let gps = tDef2.t1.genParams
+  getDataCons' ctx hint name $ \tFqn dataTypeDef -> do
+    (H.DataCons _ dcContents, dcIdx) <- findDConsInType name dataTypeDef
+    let gps = dataTypeDef.t1.genParams
     (t, gpMap) <- case astGenArgs of
       [] -> do
         let gps' = gps <&> (.fqn)
         let genericType = case dcContents of
-              H.TupleFields xs | notNull xs -> H.TFunc xs tDef2.t1.selfType (H.TEffect def)
-              _ -> tDef2.t1.selfType
+              H.TupleFields xs | notNull xs -> H.TFunc xs dataTypeDef.t1.selfType (H.TEffect def)
+              _ -> dataTypeDef.t1.selfType
         gpTypes <- inferGenericArgs [] gps hint genericType nameSr
-        let t = substituteGenerics (zip gps' gpTypes) tDef2.t1.selfType
+        let t = substituteGenerics (zip gps' gpTypes) dataTypeDef.t1.selfType
         pure (t, zip gps' gpTypes)
       _ -> do
         -- TODO Merge this with the code for vname lookup?
@@ -357,9 +357,9 @@ getDataCons ctx hint name@(_, nameSr) astGenArgs = do
         genArgs' <- forM astGenArgs $ visitTypeExpr ctx
         checkGenArgKinds $ zip gps $ zip genArgs' $ snd <$> astGenArgs
         let gpMap = zip gps genArgs' <&> \(gp, a) -> (gp.fqn, a)
-        let t = substituteGenerics gpMap tDef2.t1.selfType
+        let t = substituteGenerics gpMap dataTypeDef.t1.selfType
         pure (t, gpMap)
     let dcFieldTypes = mkDConsFieldTypes dcContents gpMap
-    let isProduct = length tDef2.dataCons == 1
+    let isProduct = length dataTypeDef.dataCons == 1
     let isFn = case dcContents of H.TupleFields xs -> notNull xs; H.RecordFields {} -> False
-    pure (H.DataConsInfo tFqn (fst name) dcIdx isFn isProduct tDef2.isEnumType, t, dcFieldTypes)
+    pure (H.DataConsInfo tFqn (fst name) dcIdx isFn isProduct dataTypeDef.isEnumType, t, dcFieldTypes)

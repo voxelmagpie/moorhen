@@ -85,18 +85,18 @@ instance MonadTc Tc where
   getThisPkg = do
     hir <- asks (.ir)
     pure (hir.name, hir)
-  getTDef1Maybe hir fqn = do
+  getTDefMaybe hir fqn = do
     liftIO $ HT.lookup hir.tDefs1 fqn
-  getTDef2Maybe hir fqn = do
-    liftIO $ HT.lookup hir.tDefs2 fqn
+  getDataTypeDefMaybe hir fqn = do
+    liftIO $ HT.lookup hir.dataTypeDefs fqn
   getVDefMaybe hir fqn = do
     liftIO $ HT.lookup hir.vDefs fqn
   inputs = asks (.inputs)
-  addTDef1 fqn d = do
+  addTDef fqn d = do
     x <- asks (.ir.tDefs1)
     liftIO $ HT.insert x fqn d
-  addTDef2 fqn d = do
-    x <- asks (.ir.tDefs2)
+  addDataTypeDef fqn d = do
+    x <- asks (.ir.dataTypeDefs)
     liftIO $ HT.insert x fqn d
   addVDef fqn d = do
     x <- asks (.ir.vDefs)

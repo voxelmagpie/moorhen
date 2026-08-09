@@ -6,4 +6,4 @@ function that has a concrete return type.
 Effects information is gathered while visiting the expression tree and stored in the type of the closure expression.
 
 Type checking of definitions is split in order to handle recursion without causing the type checker to loop infinitely.
-Type definitions are handled by visitTDef1 and visitTDef2, value definitions by visitVDef and visitVDefExpr.
+Type definitions are handled by visitTDef and visitDataTypeDef, value definitions by visitVDef and visitVDefExpr.

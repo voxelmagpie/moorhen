@@ -115,7 +115,7 @@ visitBlockDecl outerCtx blkTDef = do
           let fqn = TFqn $ un blkFqn <> "." <> "Self"
           let selfType = H.TNamed fqn []
           let tDef =
-                H.TDef1
+                H.TDef
                   { name = (TName "Self", snd blkTDef.name),
                     fqn,
                     genParams = [],
@@ -125,7 +125,7 @@ visitBlockDecl outerCtx blkTDef = do
                     isGenericParameter = True,
                     isBuiltin = False
                   }
-          addTDef1 fqn tDef
+          addTDef fqn tDef
           wh <- visitWhereClauses ctxWithGenParams astWh
           pure (selfType, ts, wh)
         _ -> error "Not a trait"

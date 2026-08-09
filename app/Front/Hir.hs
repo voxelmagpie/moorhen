@@ -15,8 +15,8 @@ data Hir = Hir
     exports :: HashTable Namespace (HashTable VName VFqn, HashTable TName TNameExport, [Module]),
     vDefs :: HashTable VFqn VDef,
     vDefExpr :: HashTable VFqn VDefExpr,
-    tDefs1 :: HashTable TFqn TDef1,
-    tDefs2 :: HashTable TFqn TDef2
+    tDefs1 :: HashTable TFqn TDef,
+    dataTypeDefs :: HashTable TFqn DataTypeDef
   }
 
 data VDefExpr = VDefExpr {expr :: Expr, nextLocalUid :: Int}
@@ -26,8 +26,8 @@ data Hir' = Hir'
   { exports :: [(Namespace, ([(VName, VFqn)], [(TName, TNameExport)]))],
     vDefs :: [(VFqn, VDef)],
     vDefExpr :: [(VFqn, VDefExpr)],
-    tDefs1 :: [(TFqn, TDef1)],
-    tDefs2 :: [(TFqn, TDef2)]
+    tDefs1 :: [(TFqn, TDef)],
+    dataTypeDefs :: [(TFqn, DataTypeDef)]
   }
   deriving (Show)
 
@@ -44,9 +44,6 @@ data Type
 type TypeL = (Type, SrcRange)
 
 -- Top-level definitions
-
-data AnyDef = AVDef VDef | ATDef TDef2
-  deriving (Show, Generic, Eq)
 
 type TraitRef = (TFqn, [Type])
 
@@ -127,7 +124,7 @@ data TNameExport = TNameExport {fqn :: TFqn, typ :: TNameExportType}
   deriving (Show, Generic, Eq)
 
 -- Data types (including builtins), aliases, generic parameters
-data TDef1 = TDef1
+data TDef = TDef
   { name :: TNameL,
     fqn :: TFqn,
     genParams :: [GenParam],
@@ -139,10 +136,10 @@ data TDef1 = TDef1
   }
   deriving (Show, Generic, Eq)
 
--- Type aliases, builtins and generic parameters do not have a TDef2
-data TDef2 = TDef2
-  { t1 :: TDef1,
-    -- Empty for builtin types (initialised through literals or builtin functions)
+-- data X, data X = Y (Int) | Z, etc.
+-- Not builtins (Int/Real/etc.), generic parameters, or type aliases
+data DataTypeDef = DataTypeDef
+  { t1 :: TDef,
     dataCons :: List1 DataCons,
     isEnumType :: Bool
   }

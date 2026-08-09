@@ -90,23 +90,23 @@ visitDestructure ctxVar t (destr, sr) = case destr of
     pure (H.DTuple ds', t, sr)
   A.DDataCons ds -> do
     ctx <- getVar ctxVar
-    (tDef2, (tFqn, genArgs)) <- getTDef2 ctx sr t
-    (name, ts) <- case tDef2.dataCons of
+    (dataTypeDef, (tFqn, genArgs)) <- getTDef2 ctx sr t
+    (name, ts) <- case dataTypeDef.dataCons of
       List1 (H.DataCons (name, _) (H.TupleFields xs)) []
         | notNull xs -> do
-            let gpMap = zip tDef2.t1.genParams genArgs <&> first (.fqn)
+            let gpMap = zip dataTypeDef.t1.genParams genArgs <&> first (.fqn)
             let ts = xs <&> substituteGenerics gpMap
             pure (name, must $ listToList1 ts)
       _ -> throw sr "Expected a type of form data X(A, B, ...)"
     ds' <- forM (zipList1 ts ds) $ uncurry $ visitDestructure ctxVar
-    let dCons = H.DataConsInfo tFqn name 0 True True tDef2.isEnumType
+    let dCons = H.DataConsInfo tFqn name 0 True True dataTypeDef.isEnumType
     pure (H.DDataCons dCons ds', t, sr)
   A.DRecord fields -> do
     ctx <- getVar ctxVar
-    (tDef2, (tFqn, genArgs)) <- getTDef2 ctx sr t
-    (dConsName, dConsFields) <- case tDef2.dataCons of
+    (dataTypeDef, (tFqn, genArgs)) <- getTDef2 ctx sr t
+    (dConsName, dConsFields) <- case dataTypeDef.dataCons of
       List1 (H.DataCons (name, _) (H.RecordFields xs)) [] -> do
-        let gpMap = zip tDef2.t1.genParams genArgs <&> first (.fqn)
+        let gpMap = zip dataTypeDef.t1.genParams genArgs <&> first (.fqn)
         let ts = xs <&> second (substituteGenerics gpMap)
         pure (name, toList ts)
       _ -> throw sr "Expected a record"
@@ -118,5 +118,5 @@ visitDestructure ctxVar t (destr, sr) = case destr of
       d' <- visitDestructure ctxVar fieldType d
       pure (fieldName, d')
 
-    let dCons = H.DataConsInfo tFqn dConsName 0 False True tDef2.isEnumType
+    let dCons = H.DataConsInfo tFqn dConsName 0 False True dataTypeDef.isEnumType
     pure (H.DRecord dCons fields', t, sr)

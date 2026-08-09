@@ -42,9 +42,9 @@ class (MonadVars m) => MonadToMir m where
   getPkg :: PkgName -> m (Pkg m)
   getVDefs :: Pkg m -> m [(VFqn, H.VDef)]
   getVDefValue :: Pkg m -> VFqn -> m (Maybe H.VDefExpr)
-  getTDef2s :: Pkg m -> m [(TFqn, H.TDef2)]
-  getTDef1 :: Pkg m -> TFqn -> m H.TDef1
-  getTDef2 :: Pkg m -> TFqn -> m H.TDef2
+  getDataTypeDefs :: Pkg m -> m [(TFqn, H.DataTypeDef)]
+  getTDef :: Pkg m -> TFqn -> m H.TDef
+  getDataTypeDef :: Pkg m -> TFqn -> m H.DataTypeDef
   getVDef :: Pkg m -> VFqn -> m H.VDef
   getTypeExport :: TFqn -> m H.TNameExport
   getModule :: TFqn -> m H.Module
@@ -73,17 +73,17 @@ toMir' :: (MonadToMir m) => m ()
 toMir' = do
   (_, pkg) <- getThisPkg
 
-  tDef2s <- getTDef2s pkg
+  dataTypeDefs <- getDataTypeDefs pkg
 
-  forM_ tDef2s $ \(tFqn, tDef2) -> do
-    forM (zip (toList tDef2.dataCons) [0 :: Int ..]) $ \(H.DataCons (name, sr) x, dcIdx) -> do
+  forM_ dataTypeDefs $ \(tFqn, dataTypeDef) -> do
+    forM (zip (toList dataTypeDef.dataCons) [0 :: Int ..]) $ \(H.DataCons (name, sr) x, dcIdx) -> do
       case x of
         H.RecordFields _ -> pure ()
         H.TupleFields [] -> pure ()
         H.TupleFields xs -> do
           -- Create a function that initialises the type
           let vFqn = VFqn $ "_" <> un tFqn <> "_" <> un name
-          t <- cvtType tDef2.t1.selfType
+          t <- cvtType dataTypeDef.t1.selfType
           ps <- forM xs cvtType
           let type' = M.TFunc ps t def False
           let pNames = [0 .. length xs - 1] <&> M.LocalVarUid
@@ -269,9 +269,9 @@ findEffs = \case
   H.TNamed (TFqn "#builtins/:Impure") _ -> M.Effects {noThrow = True, pure = False}
   _ -> def
 
-getDataConstructorTypes :: (MonadToMir m) => H.TDef2 -> m [M.Type]
-getDataConstructorTypes tDef2 = do
-  forM (toList tDef2.dataCons) $ \(H.DataCons _ fs) -> do
+getDataConstructorTypes :: (MonadToMir m) => H.DataTypeDef -> m [M.Type]
+getDataConstructorTypes dataTypeDef = do
+  forM (toList dataTypeDef.dataCons) $ \(H.DataCons _ fs) -> do
     let fs' = case fs of
           H.TupleFields xs -> xs
           H.RecordFields xs -> snd <$> toList xs
@@ -364,8 +364,8 @@ cvtExpr (e, t, sr) = do
     H.EFnCall (H.EDataCons (H.DataConsInfo {dcIdx}), calleeType, _) args -> do
       args' <- forM args cvtExpr
       let t' = case calleeType of H.TFunc _ r _ -> r; _ -> undefined
-      tDef2 <- getTNamedTDef2 t'
-      dConssTypes <- getDataConstructorTypes tDef2
+      dataTypeDef <- getTNamedTDef2 t'
+      dConssTypes <- getDataConstructorTypes dataTypeDef
       pure $ fst $ mkDataConsInit dConssTypes args' dcIdx sr
     H.EFnCall callee args -> do
       callee' <- cvtExpr callee
@@ -456,8 +456,8 @@ cvtExpr (e, t, sr) = do
           let fqn' = VFqn $ T.concat ["_", un fqn, "_", un dcName]
           pure $ M.EGlobal fqn'
         else do
-          tDef2 <- getTNamedTDef2 t
-          dConssTypes <- getDataConstructorTypes tDef2
+          dataTypeDef <- getTNamedTDef2 t
+          dConssTypes <- getDataConstructorTypes dataTypeDef
           pure $ fst $ mkDataConsInit dConssTypes [] dcIdx sr
     H.ETry tryExpr catchClauses finallyExpr -> do
       tryExpr' <- cvtExpr tryExpr
@@ -479,8 +479,8 @@ cvtExpr (e, t, sr) = do
       pure $ M.EIndex expr' idx Nothing
     H.EFieldAccess expr@(_, fieldType, _) (fieldName, _) -> do
       expr' <- cvtExpr expr
-      tDef2 <- getTNamedTDef2 fieldType
-      let (H.DataCons _ fields) = tDef2.dataCons !! 0
+      dataTypeDef <- getTNamedTDef2 fieldType
+      let (H.DataCons _ fields) = dataTypeDef.dataCons !! 0
       let fieldIdx = case fields of
             H.TupleFields _ -> error "TupleFields in EFieldAccess"
             H.RecordFields fs -> fromMaybe (error "Field not found") $ findIndex (fst >>> (== fieldName)) $ toList fs
@@ -490,8 +490,8 @@ cvtExpr (e, t, sr) = do
         expr' <- cvtExpr expr
         uid <- mkLocalVarUid
         pure (uid, expr')
-      tDef2 <- getTNamedTDef2 t
-      let (H.DataCons _ fields) = toList tDef2.dataCons !! dcInfo.dcIdx
+      dataTypeDef <- getTNamedTDef2 t
+      let (H.DataCons _ fields) = toList dataTypeDef.dataCons !! dcInfo.dcIdx
       let fieldOrder = case fields of
             H.TupleFields _ -> error "TupleFields in ERecordInit"
             H.RecordFields fs -> toList fs <&> fst
@@ -500,7 +500,7 @@ cvtExpr (e, t, sr) = do
               Just i -> fst $ exprUids !! i
               Nothing -> error "Field not found in record init"
       let varExprs = sortedUids <&> \uid -> (M.EVar uid, sr)
-      dConssTypes <- getDataConstructorTypes tDef2
+      dConssTypes <- getDataConstructorTypes dataTypeDef
       let recordExpr = mkDataConsInit dConssTypes varExprs dcInfo.dcIdx sr
       let letStmts = exprUids <&> \(uid, expr') -> (M.SLet uid Nothing False expr', snd expr')
       pure $ M.EDoBlock letStmts (Just recordExpr)
@@ -699,19 +699,19 @@ cvtStmt (stmt, sr) = case stmt of
 
     pure [initStmt, loopStmt]
 
-getTNamedTDef2 :: (MonadToMir m, HasCallStack) => H.Type -> m H.TDef2
+getTNamedTDef2 :: (MonadToMir m, HasCallStack) => H.Type -> m H.DataTypeDef
 getTNamedTDef2 (H.TNamed fqn _) = do
   let pkg = tFqnToPkg fqn
   pkg' <- getPkg pkg
-  getTDef2 pkg' fqn
+  getDataTypeDef pkg' fqn
 getTNamedTDef2 t = error $ "getTNamedTDef2 not TNamed: " <> show t
 
 effectCouldContainAsync :: (MonadToMir m) => H.Type -> m IsAsync
 effectCouldContainAsync (H.TNamed (TFqn "#builtins/:AsyncEffect") _) = pure IsAsync
 effectCouldContainAsync (H.TNamed fqn _) = do
   let pkg = tFqnToPkg fqn
-  tDef1 <- getPkg pkg >>= \pkg' -> getTDef1 pkg' fqn
-  if tDef1.isGenericParameter then pure MaybeAsync else pure NotAsync
+  tDef <- getPkg pkg >>= \pkg' -> getTDef pkg' fqn
+  if tDef.isGenericParameter then pure MaybeAsync else pure NotAsync
 effectCouldContainAsync (H.TEffect es) = forM (toList es) effectCouldContainAsync <&> mconcat
 effectCouldContainAsync _ = pure NotAsync
 
@@ -743,13 +743,13 @@ cvtType t'' = do
               pure (M.TAny, [fqn])
             else do
               pkg <- getPkg pkgName
-              tDef1 <- getTDef1 pkg fqn
-              assertM $ not tDef1.isAlias
-              if tDef1.isGenericParameter
+              tDef <- getTDef pkg fqn
+              assertM $ not tDef.isAlias
+              if tDef.isGenericParameter
                 then
                   pure (M.TAny, [])
                 else
-                  if tDef1.isBuiltin
+                  if tDef.isBuiltin
                     then
                       (,[]) <$> case T.drop (T.length "#builtins/:") (un fqn) of
                         "Int" -> pure M.TInt
@@ -764,7 +764,7 @@ cvtType t'' = do
                         "Vec" -> pure M.TVec
                         _ -> error "Unknown builtin"
                     else do
-                      tDef2 <- getTDef2 pkg fqn
+                      dataTypeDef <- getDataTypeDef pkg fqn
                       let convertDCons fields = do
                             let fields' = case fields of
                                   H.TupleFields xs -> xs
@@ -775,7 +775,7 @@ cvtType t'' = do
                                   [t'] -> t'
                                   (t0 : t1 : ts) -> M.TProduct $ List2 t0 t1 ts
                             pure (fs', concatMap snd fs)
-                      case tDef2.dataCons of
+                      case dataTypeDef.dataCons of
                         List1 (H.DataCons _ fields) [] -> do
                           dcs'' <- convertDCons fields
                           pure $ first (if fqn `elem` snd dcs'' then M.TRecursive else identity) dcs''
@@ -821,16 +821,16 @@ instance MonadToMir ToMirM where
     pure $ must $ HM.lookup name x
   getVDefs pkg = liftIO $ HT.toList pkg.vDefs
   getVDefValue pkg fqn = liftIO $ HT.lookup pkg.vDefExpr fqn
-  getTDef2s pkg = liftIO $ HT.toList pkg.tDefs2
+  getDataTypeDefs pkg = liftIO $ HT.toList pkg.dataTypeDefs
   addVDef fqn v = do
     vDefs <- asks (.mir.vDefs)
     liftIO $ HT.insert vDefs fqn v
   getVDef hir fqn =
     liftIO $ HT.lookup hir.vDefs fqn <&> must
-  getTDef1 hir fqn =
+  getTDef hir fqn =
     liftIO $ HT.lookup hir.tDefs1 fqn <&> must
-  getTDef2 hir fqn =
-    liftIO $ HT.lookup hir.tDefs2 fqn <&> must
+  getDataTypeDef hir fqn =
+    liftIO $ HT.lookup hir.dataTypeDefs fqn <&> must
   getTypeExport fqn = do
     hir <- getPkg $ tFqnToPkg fqn
     (_, x, _) <- liftIO $ HT.lookup hir.exports (tFqnToNamespace fqn) <&> must
