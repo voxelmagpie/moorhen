@@ -281,42 +281,50 @@ getDataConstructorTypes dataTypeDef = do
       [x] -> x
       (x : y : zs) -> M.TProduct $ List2 x y zs
 
+gatherTraitWhereData :: (MonadToMir m) => SrcRange -> (H.TraitRef, H.ChosenTrait) -> m M.Expr
+gatherTraitWhereData sr ((traitFqn, _), chosenTrait) = do
+  a <- getIsAsync
+  case chosenTrait of
+    H.FromWhereClause src whereClauseIdx whereClauseTraitIdx -> do
+      whUid <- getWhereParamUid src
+      let getVarExpr = (M.EVar $ must whUid, sr)
+      let indexed1 = (M.EIndex getVarExpr whereClauseIdx Nothing, sr)
+      pure (M.EIndex indexed1 whereClauseTraitIdx Nothing, sr)
+    H.FromModule modFqn _genArgs modWhs -> do
+      pkg <- getPkg $ tFqnToPkg modFqn
+      modWhs' <- gatherTraitsWhereData sr modWhs
+      trait <- getTrait traitFqn
+      let traitNamesOrdered = trait.vDefs <&> ((.vDef.name) >>> fst)
+      let fqns = traitNamesOrdered <&> \n -> VFqn $ un modFqn <> "." <> un n
+      let exprs = fqns <&> \x -> (M.EGlobal x, sr)
+      exprs' <-
+        if null modWhs
+          then pure exprs
+          else do
+            forM (zip fqns exprs) $ \(vFqn, e') -> do
+              vDef <- getVDef pkg vFqn
+              vDefType <- cvtType vDef.type'
+              pure (M.EFnCall e' [modWhs'] a vDefType, sr)
+
+      pure (M.EVec exprs', sr)
+
+gatherTraitsWhereData :: (MonadToMir m) => SrcRange -> [List1 (H.TraitRef, H.ChosenTrait)] -> m M.Expr
+gatherTraitsWhereData sr ts = do
+  xs <- forM ts $ \xs -> do
+    ys <- forM xs $ gatherTraitWhereData sr
+    pure (M.EVec $ toList ys, sr)
+  pure (M.EVec xs, sr)
+
 mkApplyWhereClausesExpr ::
   forall m. (MonadToMir m) => SrcRange -> M.Type -> H.WhereClauseTraitsList -> M.Expr -> m M.Expr
 mkApplyWhereClausesExpr sr t' ts defExpr = do
   a <- getIsAsync
-  let g :: List1 (H.TraitRef, H.ChosenTrait) -> m M.Expr
-      g xs = do
-        ys <- forM (toList xs) $ \((traitFqn, _), chosenTrait) -> case chosenTrait of
-          H.FromWhereClause src whereClauseIdx whereClauseTraitIdx -> do
-            whUid <- getWhereParamUid src
-            let getVarExpr = (M.EVar $ must whUid, sr)
-            let indexed1 = (M.EIndex getVarExpr whereClauseIdx Nothing, sr)
-            pure (M.EIndex indexed1 whereClauseTraitIdx Nothing, sr)
-          H.FromModule modFqn _genArgs modWhs -> do
-            pkg <- getPkg $ tFqnToPkg modFqn
-            modWhs' <- forM modWhs g <&> \x -> (M.EVec x, sr)
-            trait <- getTrait traitFqn
-            let traitNamesOrdered = trait.vDefs <&> ((.vDef.name) >>> fst)
-            let fqns = traitNamesOrdered <&> \n -> VFqn $ un modFqn <> "." <> un n
-            let exprs = fqns <&> \x -> (M.EGlobal x, sr)
-            exprs' <-
-              if null modWhs
-                then pure exprs
-                else do
-                  forM (zip fqns exprs) $ \(vFqn, e') -> do
-                    vDef <- getVDef pkg vFqn
-                    vDefType <- cvtType vDef.type'
-                    pure (M.EFnCall e' [modWhs'] a vDefType, sr)
-
-            pure (M.EVec exprs', sr)
-        pure (M.EVec ys, sr)
 
   if null ts
     then pure defExpr
     else do
-      xs <- forM ts $ \xs -> g xs
-      pure (M.EFnCall defExpr [(M.EVec xs, sr)] a t', sr)
+      xs <- gatherTraitsWhereData sr ts
+      pure (M.EFnCall defExpr [xs] a t', sr)
 
 cvtExpr :: forall m. (MonadToMir m) => H.Expr -> m M.Expr
 cvtExpr (e, t, sr) = do
@@ -528,6 +536,13 @@ cvtExpr (e, t, sr) = do
       expr' <- cvtExpr expr
       toType <- cvtType t
       pure $ M.ECastNumber expr' toType
+    H.ECastToTraitType expr chosenTrait -> do
+      expr' <- cvtExpr expr
+      let trait = case t of
+            H.TNamed fqn genArgs -> (fqn, genArgs)
+            _ -> undefined
+      wh <- gatherTraitWhereData sr (trait, chosenTrait)
+      pure $ M.EProduct $ List2 expr' wh []
   pure (e', sr)
 
 cvtUpdatePart :: (MonadToMir m) => M.Expr -> [M.Expr] -> H.EUpdatePart -> m M.Expr
@@ -711,7 +726,7 @@ effectCouldContainAsync (H.TNamed (TFqn "#builtins/:AsyncEffect") _) = pure IsAs
 effectCouldContainAsync (H.TNamed fqn _) = do
   let pkg = tFqnToPkg fqn
   tDef <- getPkg pkg >>= \pkg' -> getTDef pkg' fqn
-  if tDef.isGenericParameter then pure MaybeAsync else pure NotAsync
+  if tDef.tDefType == H.IsGenParam then pure MaybeAsync else pure NotAsync
 effectCouldContainAsync (H.TEffect es) = forM (toList es) effectCouldContainAsync <&> mconcat
 effectCouldContainAsync _ = pure NotAsync
 
@@ -744,47 +759,47 @@ cvtType t'' = do
             else do
               pkg <- getPkg pkgName
               tDef <- getTDef pkg fqn
-              assertM $ not tDef.isAlias
-              if tDef.isGenericParameter
-                then
+              case tDef.tDefType of
+                H.IsAlias -> undefined -- Aliases don't get represented as TNamed
+                H.IsGenParam ->
                   pure (M.TAny, [])
-                else
-                  if tDef.isBuiltin
-                    then
-                      (,[]) <$> case T.drop (T.length "#builtins/:") (un fqn) of
-                        "Int" -> pure M.TInt
-                        "I32" -> pure M.TI32
-                        "Real" -> pure M.TReal
-                        "Unit" -> pure M.TUnit
-                        "Unreachable" -> pure M.TUnit
-                        "String" -> pure M.TString
-                        "Bool" -> pure M.TBool
-                        "Any" -> pure M.TAny
-                        "Lazy" -> pure M.TLazy
-                        "Vec" -> pure M.TVec
-                        _ -> error "Unknown builtin"
-                    else do
-                      dataTypeDef <- getDataTypeDef pkg fqn
-                      let convertDCons fields = do
-                            let fields' = case fields of
-                                  H.TupleFields xs -> xs
-                                  H.RecordFields xs -> snd <$> toList xs
-                            fs <- forM fields' (cvtType' (fqn : seen))
-                            let fs' = case fst <$> fs of
-                                  [] -> M.TUnit
-                                  [t'] -> t'
-                                  (t0 : t1 : ts) -> M.TProduct $ List2 t0 t1 ts
-                            pure (fs', concatMap snd fs)
-                      case dataTypeDef.dataCons of
-                        List1 (H.DataCons _ fields) [] -> do
-                          dcs'' <- convertDCons fields
-                          pure $ first (if fqn `elem` snd dcs'' then M.TRecursive else identity) dcs''
-                        List1 dc0 (dc1 : dcs') -> do
-                          let dcs = List2 dc0 dc1 dcs'
-                          dcs'' <- forM dcs $ \(H.DataCons _ fields) -> convertDCons fields
-                          let recs = concatMap snd dcs''
-                          let sumType = M.TSum $ fst <$> dcs''
-                          pure ((if fqn `elem` recs then M.TRecursive else identity) sumType, recs)
+                H.IsBuiltin ->
+                  (,[]) <$> case T.drop (T.length "#builtins/:") (un fqn) of
+                    "Int" -> pure M.TInt
+                    "I32" -> pure M.TI32
+                    "Real" -> pure M.TReal
+                    "Unit" -> pure M.TUnit
+                    "Unreachable" -> pure M.TUnit
+                    "String" -> pure M.TString
+                    "Bool" -> pure M.TBool
+                    "Any" -> pure M.TAny
+                    "Lazy" -> pure M.TLazy
+                    "Vec" -> pure M.TVec
+                    _ -> error "Unknown builtin"
+                H.IsDataDef -> do
+                  dataTypeDef <- getDataTypeDef pkg fqn
+                  let convertDCons fields = do
+                        let fields' = case fields of
+                              H.TupleFields xs -> xs
+                              H.RecordFields xs -> snd <$> toList xs
+                        fs <- forM fields' (cvtType' (fqn : seen))
+                        let fs' = case fst <$> fs of
+                              [] -> M.TUnit
+                              [t'] -> t'
+                              (t0 : t1 : ts) -> M.TProduct $ List2 t0 t1 ts
+                        pure (fs', concatMap snd fs)
+                  case dataTypeDef.dataCons of
+                    List1 (H.DataCons _ fields) [] -> do
+                      dcs'' <- convertDCons fields
+                      pure $ first (if fqn `elem` snd dcs'' then M.TRecursive else identity) dcs''
+                    List1 dc0 (dc1 : dcs') -> do
+                      let dcs = List2 dc0 dc1 dcs'
+                      dcs'' <- forM dcs $ \(H.DataCons _ fields) -> convertDCons fields
+                      let recs = concatMap snd dcs''
+                      let sumType = M.TSum $ fst <$> dcs''
+                      pure ((if fqn `elem` recs then M.TRecursive else identity) sumType, recs)
+                H.IsTrait' ->
+                  pure (M.TProduct $ List2 M.TAny M.TVec [], [])
         H.TEffect _ -> error "Abstract type"
         H.TLifetime _ -> error "Abstract type"
   fst <$> cvtType' [] t''

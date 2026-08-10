@@ -140,7 +140,7 @@ visitELitList ctx typeHint (theExpr, sr) = case theExpr of
         let hint = typeToPType t
         tail' <- forM (tail es) $ \e -> do
           (e', ef) <- visitExpr ctx hint e
-          e'' <- implicitCast e' t
+          e'' <- implicitCast ctx e' t
           pure (e'', ef)
 
         let t' = H.TNamed (TFqn "#builtins/:Vec") [t]
@@ -288,7 +288,7 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
       H.TFunc ps r ef -> do
         unless (length ps == length astArgsExprs) $ throw sr "Wrong number of arguments to function"
         as <- forM (zip ps argsExprs) $ \(ex, (argExpr, efs)) ->
-          implicitCast argExpr ex <&> (,efs)
+          implicitCast ctx argExpr ex <&> (,efs)
         pure (as, r, case ef of H.TEffect x -> x; _ -> undefined)
       _ -> throw astCalleeExpr "Type is not a function"
 
@@ -329,8 +329,8 @@ visitEIf ctx typeHint (theExpr, sr) = case theExpr of
     (thenExpr@(_, t0, _), ef1) <- visitExpr ctx typeHint astThenExpr
     (elseExpr@(_, t1, _), ef2) <- visitExpr ctx typeHint astElseExpr
     let t = if t0 == unreachableType then t1 else t0
-    thenExpr'@(_, t0', _) <- implicitCast thenExpr t
-    elseExpr'@(_, t1', _) <- implicitCast elseExpr t
+    thenExpr'@(_, t0', _) <- implicitCast ctx thenExpr t
+    elseExpr'@(_, t1', _) <- implicitCast ctx elseExpr t
 
     unless (t0' == t1')
       $ throw
@@ -355,9 +355,9 @@ visitEAnd :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashS
 visitEAnd ctx _ (theExpr, sr) = case theExpr of
   A.EAnd lhs rhs -> do
     (lhs', eff1) <- visitExpr ctx boolHint lhs
-    lhs'' <- implicitCast lhs' boolType
+    lhs'' <- implicitCast ctx lhs' boolType
     (rhs', eff2) <- visitExpr ctx boolHint rhs
-    rhs'' <- implicitCast rhs' boolType
+    rhs'' <- implicitCast ctx rhs' boolType
 
     pure ((H.EAnd lhs'' rhs'', boolType, sr), eff1 <> eff2)
   _ -> undefined
@@ -366,9 +366,9 @@ visitEOr :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSe
 visitEOr ctx _ (theExpr, sr) = case theExpr of
   A.EOr lhs rhs -> do
     (lhs', eff1) <- visitExpr ctx boolHint lhs
-    lhs'' <- implicitCast lhs' boolType
+    lhs'' <- implicitCast ctx lhs' boolType
     (rhs', eff2) <- visitExpr ctx boolHint rhs
-    rhs'' <- implicitCast rhs' boolType
+    rhs'' <- implicitCast ctx rhs' boolType
 
     pure ((H.EOr lhs'' rhs'', boolType, sr), eff1 <> eff2)
   _ -> undefined
@@ -389,7 +389,7 @@ visitEMatch ctx typeHint (theExpr, sr) = case theExpr of
       (e'@(_, t, _), ef1) <- visitExpr ctx' hint b.expr
       e'' <- case tMaybe of
         Just ex'' -> do
-          implicitCast e' ex''
+          implicitCast ctx' e' ex''
         _ -> do
           unless (t == unreachableType) $ setVar finalType $ Just t
           pure e'
@@ -568,9 +568,9 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
       H.TFunc ps r ef -> do
         unless (length ps == length astExtraArgsExprs + 1)
           $ throw (srcRangeOf name astExtraArgsExprs) "Wrong number of arguments to member function"
-        lhs' <- implicitCast lhs $ must $ head ps
+        lhs' <- implicitCast ctx lhs $ must $ head ps
         as <- forM (zip (tail ps) extraArgsExprs) $ \(ex, (argExpr, efs)) ->
-          implicitCast argExpr ex <&> (,efs)
+          implicitCast ctx argExpr ex <&> (,efs)
         pure (lhs', as, r, case ef of H.TEffect x -> x; _ -> undefined)
       _ -> throw astLhsExpr "Type is not a function"
 
@@ -605,7 +605,7 @@ visitETry ctx typeHint (theExpr, sr) = case theExpr of
         ctx' <- getVar ctxVar
 
         (e', effs) <- visitExpr ctx' catchHint e
-        e'' <- implicitCast e' tryType
+        e'' <- implicitCast ctx' e' tryType
         remaining <- getVar remainingEffects
         let remaining' = HS.delete (H.TNamed (TFqn "#builtins/:Throws") [exType]) remaining
         setVar remainingEffects remaining'
@@ -692,7 +692,7 @@ visitERecordInit ctx typeHint (theExpr, sr) = case theExpr of
         Nothing -> throw sr $ "Field '" <> un (fst n) <> "' not found in record"
       let hint = typeToPType expectedType
       (e', efs) <- visitExpr ctx hint e
-      e'' <- implicitCast e' expectedType
+      e'' <- implicitCast ctx e' expectedType
       pure (e'', efs)
 
     let fieldExprs = fieldValuesAndEffects <&> fst
@@ -753,7 +753,7 @@ visitEUpdate ctx _ (theExpr, sr) = case theExpr of
               oldExprMaybe <- getVar setterExprs <&> (!! i)
               assertM $ isNothing oldExprMaybe -- Parser should have caught this
               (e'', efs) <- visitExpr ctx (typeToPType t) $ snd $ setters !! i
-              e''' <- implicitCast e'' t
+              e''' <- implicitCast ctx e'' t
               modVar setterExprs $ updateAt i $ const $ Just (e''', efs)
               pure $ H.EUpdateValue i
             _ -> case t of
@@ -763,7 +763,7 @@ visitEUpdate ctx _ (theExpr, sr) = case theExpr of
                 pure $ H.EUpdateTuple $ list2ToList1 parts
               H.TNamed tFqn genArgs -> do
                 tDef <- getTDef sr t
-                if tDef.isBuiltin || tDef.isGenericParameter || tDef.typeKind /= MonoType
+                if (tDef.tDefType /= H.IsDataDef) || tDef.typeKind /= MonoType
                   then
                     pure H.EUpdateNoChange
                   else do
@@ -814,7 +814,7 @@ visitEExplicitType ctx _ (theExpr, _) = case theExpr of
   A.EExplicitType e t -> do
     t' <- visitTypeExpr ctx t
     (e', ef) <- visitExpr ctx (typeToPType t') e
-    e'' <- implicitCast e' t'
+    e'' <- implicitCast ctx e' t'
     pure (e'', ef)
   _ -> undefined
 
@@ -831,7 +831,7 @@ visitEAs ctx _ (theExpr, sr) = case theExpr of
         pure (H.ECastNumber e', toType, sr)
       (H.TNamed {}, H.TNamed toFqn []) | isIntType toFqn -> do
         tDef <- getTDef sr actType
-        if not tDef.isBuiltin
+        if tDef.tDefType /= H.IsBuiltin
           then do
             (dataTypeDef, _) <- getTDef2 ctx sr actType
             if dataTypeDef.isEnumType
@@ -863,7 +863,7 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
     let typeHint' = case typeMaybe of Just x -> typeToPType x; _ -> TUnknown
 
     (e', efs) <- visitExpr ctx typeHint' astExpr
-    e''@(_, t, _) <- case typeMaybe of Just x -> implicitCast e' x; _ -> pure e'
+    e''@(_, t, _) <- case typeMaybe of Just x -> implicitCast ctx e' x; _ -> pure e'
 
     d <- visitDestructure ctxVar t destr
     pure ((H.SLet d e'', sr), efs)
@@ -878,7 +878,7 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
     setVar ctxVar ctx'
 
     (e', efs) <- visitExpr ctx' typeHint' astExpr
-    e'' <- implicitCast e' explicitType
+    e'' <- implicitCast ctx' e' explicitType
 
     pure ((H.SRecLet name uid e'', sr), efs)
   A.SExpr astExpr -> do
@@ -903,7 +903,7 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
 
     (rhs', rhsEffs) <- visitExpr ctx (typeToPType var.typ) rhs
 
-    rhs'' <- implicitCast rhs' var.typ
+    rhs'' <- implicitCast ctx rhs' var.typ
 
     let effs =
           if var.closureDepth < ctx.closureDepth

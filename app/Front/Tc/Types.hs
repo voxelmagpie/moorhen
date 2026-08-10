@@ -19,6 +19,7 @@ import Front.Tc.Inputs
 import Front.Tc.Names
 import Front.Tc.PType
 import Front.Tc.State
+import {-# SOURCE #-} Front.Tc.Traits (findTraitImpls')
 import Front.TypeKind (TypeKind (EffectType, MonoType))
 import GHC.Stack (HasCallStack)
 import MhPrelude
@@ -29,8 +30,9 @@ import SrcLoc (SrcRange)
 mkExActTypeError :: H.Type -> H.Type -> Text
 mkExActTypeError ex act = "Expected " <> typeToText ex <> ", got " <> typeToText act
 
-implicitCast :: (MonadTcError m) => H.Expr -> H.Type -> m H.Expr
-implicitCast e@(_, from, sr) to =
+implicitCast :: (MonadTc m) => Ctx -> H.Expr -> H.Type -> m H.Expr
+implicitCast ctx e@(_, from, sr) to = do
+  let errMsg = "Incompatible types\nExpected " <> typeToText to <> ", got " <> typeToText from
   if from == to
     then pure e
     else case (from, to) of
@@ -44,7 +46,16 @@ implicitCast e@(_, from, sr) to =
         pure (H.EIntToF64 e, to, sr)
       (H.TNamed (TFqn "#builtins/:Int") _, H.TNamed (TFqn "#builtins/:Real") _) ->
         pure (H.EIntToF64 e, to, sr)
-      _ -> throw sr $ "Incompatible types\nExpected " <> typeToText to <> ", got " <> typeToText from
+      (_, H.TNamed toFqn toGenArgs) -> do
+        let pkg = tFqnToPkg toFqn
+        (thisPkg, thisPkg') <- getThisPkg
+        pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
+        tDef <- getTDefMaybe pkg' toFqn <&> must
+        when (tDef.tDefType /= H.IsTrait') $ throw sr errMsg
+        let whs = [(from, List1 (toFqn, toGenArgs) [])]
+        xs <- findTraitImpls' ctx whs sr
+        pure (H.ECastToTraitType e (snd $ (xs !! 0) !! 0), to, sr)
+      _ -> throw sr errMsg
 
 implicitCastHint :: H.Expr -> PType -> H.Expr
 implicitCastHint e@(_, from, sr) to = case (from, to) of
@@ -110,7 +121,7 @@ visitTDef outerCtx astTDef = do
                   }
           t <- visitTypeExpr ctx astType
           let k = case t of H.TEffect {} -> EffectType; _ -> MonoType
-          pure $ H.TDef astTDef.name fqn gps t True k False isBuiltin
+          pure $ H.TDef astTDef.name fqn gps t k H.IsAlias
         _ -> do
           when isBuiltin $ do
             let knownTypes = ["Real", "I32", "Int", "Bool", "Unit", "String", "Lazy", "Any", "Vec", "Unreachable"]
@@ -122,7 +133,9 @@ visitTDef outerCtx astTDef = do
 
           let t = H.TNamed fqn $ gps <&> (.type')
           let k = if astTDef.isEffect then EffectType else MonoType
-          pure $ H.TDef astTDef.name fqn gps t False k False isBuiltin
+          let isTrait = case astTDef.tDef of A.Trait {} -> True; _ -> False
+          let typ = if isBuiltin then H.IsBuiltin else if isTrait then H.IsTrait' else H.IsDataDef
+          pure $ H.TDef astTDef.name fqn gps t k typ
 
       addTDef fqn d
       pure (fqn, d)
@@ -208,13 +221,13 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
           A.TypeAliasDecl {} -> pure ()
           A.TypeDecl {} -> pure ()
           A.BuiltinTypeDecl {} -> pure ()
-          A.Trait {} -> throw sr "Expected type, got trait"
+          A.Trait {} -> pure ()
           A.Module {} -> throw sr "Expected type, got module"
         (tFqn, tDef) <- visitTDef outerCtx astTDef
         unless (length tDef.genParams == length genArgs')
           $ throw sr "Wrong number of generic arguments for type"
         checkGenArgKinds $ zip tDef.genParams $ zip genArgs' $ snd <$> genArgs
-        if tDef.isAlias
+        if tDef.tDefType == H.IsAlias
           then do
             let gps = tDef.genParams <&> (.fqn)
             pure $ substituteGenerics (zip gps genArgs') tDef.selfType
@@ -223,15 +236,14 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
       NlTypeDef pkgName (H.TNameExport {fqn, typ}) -> do
         case typ of
           H.IsTypeDef -> pure ()
-          H.IsTrait _ -> throw sr "Expected type, got trait"
+          H.IsTrait _ -> pure ()
           H.IsModule _ -> throw sr "Expected type, got module"
-        unless (typ == H.IsTypeDef) $ throw sr "Expected type"
         pkg <- getDepPkg pkgName
         tDef <- getTDefMaybe pkg fqn <&> must
         unless (length tDef.genParams == length genArgs')
           $ throw sr "Wrong number of generic arguments for type"
         checkGenArgKinds $ zip tDef.genParams $ zip genArgs' $ snd <$> genArgs
-        if tDef.isAlias
+        if tDef.tDefType == H.IsAlias
           then do
             let gps = tDef.genParams <&> (.fqn)
             pure $ substituteGenerics (zip gps genArgs') tDef.selfType
@@ -265,8 +277,7 @@ getTDef2 ctx sr t = case t of
     pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
     tDef <- getTDefMaybe pkg' fqn <&> must
     assertM $ tDef.typeKind == MonoType
-    when tDef.isGenericParameter $ throw sr "Cannot access data constructors or fields in generic parameters"
-    when tDef.isBuiltin $ throw sr "Cannot access data constructors or fields in builtins"
+    when (tDef.tDefType /= H.IsDataDef) $ throw sr $ un (tFqnToName fqn) <> " is not a data type"
     dataTypeDef <-
       if thisPkg == pkg
         then do
@@ -312,7 +323,7 @@ getDataCons' ctx hint name@(_, nameSr) f = do
       (thisPkg, thisPkg') <- getThisPkg
       pkg <- if thisPkg == pkgName then pure thisPkg' else getDepPkg pkgName
       tDef <- getTDefMaybe pkg fqn <&> must
-      when (tDef.isGenericParameter || tDef.isBuiltin) $ throw nameSr ("Cannot initialise type " <> un (fst tDef.name))
+      when (tDef.tDefType /= H.IsDataDef) $ throw nameSr $ un (tFqnToName fqn) <> " is not a data type"
       dataTypeDef <- getDataTypeDefMaybe pkg fqn <&> must
       f fqn dataTypeDef
     _ -> do
@@ -331,7 +342,7 @@ getDataCons' ctx hint name@(_, nameSr) f = do
           unless (typ == H.IsTypeDef) $ throw nameSr "Not a type"
           pkg <- getDepPkg pkgName
           tDef <- getTDefMaybe pkg fqn <&> must
-          when tDef.isBuiltin $ throw nameSr "Builtin types cannot be initialised in this way"
+          when (tDef.tDefType == H.IsBuiltin) $ throw nameSr "Builtin types cannot be initialised in this way"
           dataTypeDef <- getDataTypeDefMaybe pkg fqn <&> must
           f fqn dataTypeDef
 

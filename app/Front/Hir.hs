@@ -123,21 +123,27 @@ data TNameExportType = IsTypeDef | IsModule Module | IsTrait Trait
 data TNameExport = TNameExport {fqn :: TFqn, typ :: TNameExportType}
   deriving (Show, Generic, Eq)
 
--- Data types (including builtins), aliases, generic parameters
+-- Data types (including builtins), aliases, generic parameters, traits
 data TDef = TDef
   { name :: TNameL,
     fqn :: TFqn,
     genParams :: [GenParam],
     selfType :: Type,
-    isAlias :: Bool,
     typeKind :: TypeKind,
-    isGenericParameter :: Bool, -- or 'for'/Self type
-    isBuiltin :: Bool
+    tDefType :: TDefType
   }
   deriving (Show, Generic, Eq)
 
+data TDefType
+  = IsDataDef
+  | IsBuiltin
+  | IsGenParam -- or 'for'/Self type
+  | IsAlias
+  | IsTrait'
+  deriving (Show, Generic, Eq)
+
 -- data X, data X = Y (Int) | Z, etc.
--- Not builtins (Int/Real/etc.), generic parameters, or type aliases
+-- Not builtins (Int/Real/etc.), generic parameters, traits, or type aliases
 data DataTypeDef = DataTypeDef
   { t1 :: TDef,
     dataCons :: List1 DataCons,
@@ -219,6 +225,7 @@ data Expr'
   | ESignExtendInt Expr -- Takes any integer type other than Int
   | EIntToF64 Expr
   | ECastNumber Expr -- Casts between Int, I32, Real, and sum types -> Int/I32
+  | ECastToTraitType Expr ChosenTrait
   deriving (Show, Generic, Eq)
 
 data EUpdatePart

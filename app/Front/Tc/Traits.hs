@@ -2,7 +2,7 @@
 -- License, v. 2.0. If a copy of the MPL was not distributed with this
 -- file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-module Front.Tc.Traits (lookupTrait, visitBlockDecl, findTraitImpls, getTrait, lookupMembVNameInCtxWhere, visitTrait) where
+module Front.Tc.Traits (lookupTrait, visitBlockDecl, findTraitImpls, findTraitImpls', getTrait, lookupMembVNameInCtxWhere, visitTrait) where
 
 import Control.Monad (forM, forM_, unless, when)
 import Data.HashMap.Strict qualified as HM
@@ -120,10 +120,8 @@ visitBlockDecl outerCtx blkTDef = do
                     fqn,
                     genParams = [],
                     selfType,
-                    isAlias = False,
                     typeKind = MonoType,
-                    isGenericParameter = True,
-                    isBuiltin = False
+                    tDefType = H.IsGenParam
                   }
           addTDef fqn tDef
           wh <- visitWhereClauses ctxWithGenParams astWh

@@ -1,0 +1,19 @@
+//", , , "
+//"3, true, Pair(1, 2), Red"
+
+#deriving("Show")
+data Pair = Pair(Int, Int)
+
+#deriving("Show")
+data Colour = Red | Green | Blue
+
+let showIt (x : Show) : String
+	""
+	// x.show()
+
+let main () : String
+	let a : Show = 3
+	let b : Show = true
+	let c : Show = Pair(1, 2) : Pair
+	let d : Show = Red : Colour
+	showIt(a) ++ ", " ++ showIt(b) ++ ", " ++ showIt(c) ++ ", " ++ showIt(d)

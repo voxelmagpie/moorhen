@@ -130,7 +130,7 @@ visitVDefExpr ctx ex expr@(_, sr) = do
   resetLocalVarUids
   (e', ef) <- visitExpr ctx (typeToPType defType) expr
   unless (null ef) $ throw sr "Global variables may not have effects"
-  e'' <- implicitCast e' ex
+  e'' <- implicitCast ctx e' ex
   nextUid <- getNextLocalVarUid
   addVDefExpr fqn e'' nextUid
 

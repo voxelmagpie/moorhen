@@ -108,6 +108,7 @@ typeCheckPackage' = do
           modVar tExports ((fst tDef.name, H.TNameExport blkFqn $ H.IsModule mod) :)
           modVar allModules (mod :)
         A.Trait d _ _ -> do
+          _ <- visitTDef outerCtx tDef
           trait <- visitTrait outerCtx tDef d.vDefsOrdered d.opMap
           modVar tExports ((fst tDef.name, H.TNameExport trait.fqn $ H.IsTrait trait) :)
     forM_ (toList ast.vDefs) $ \(_, astVDef) -> do

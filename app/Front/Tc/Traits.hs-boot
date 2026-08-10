@@ -17,5 +17,6 @@ lookupTrait :: (MonadTc m) => Ctx -> [TFqn] -> A.TypeExpr -> m (List1 H.TraitRef
 getTrait :: (MonadTc m) => Inputs -> TFqn -> m H.Trait
 visitBlockDecl :: (MonadTc m) => Ctx -> A.TDef -> m BlockCached
 findTraitImpls :: (MonadTc m) => Ctx -> [(TFqn, H.Type)] -> H.WhereClauses -> SrcRange -> m H.WhereClauseTraitsList
+findTraitImpls' :: (MonadTc m) => Ctx -> [(H.Type, List1 H.TraitRef)] -> SrcRange -> m H.WhereClauseTraitsList
 lookupMembVNameInCtxWhere :: (MonadTc m) => Ctx -> H.Type -> Either VName OpName -> m [(H.FromWhereClauseSource, Int, Int, H.TraitVDef)]
 visitTrait :: (MonadTc m) => Ctx -> A.TDef -> [A.VDef] -> HashMap OpName (List1 A.VDef) -> m H.Trait

@@ -24,7 +24,7 @@ mkGenParams :: (MonadTc m) => Fqn -> [(TypeKind, TNameL)] -> m [H.GenParam]
 mkGenParams typeFqn gArgs = forM gArgs $ \(k, n@(TName n', sr)) -> do
   let fqn = TFqn $ un typeFqn <> "$" <> n'
   let t = H.TNamed fqn []
-  addTDef fqn $ H.TDef n fqn [] t False k True False
+  addTDef fqn $ H.TDef n fqn [] t k H.IsGenParam
   pure $ H.GenParam fqn sr t k
 
 -- Replaces generic type parameters with concrete types throughout a type
