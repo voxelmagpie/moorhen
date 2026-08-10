@@ -849,8 +849,7 @@ getTDef sr t = case t of
   H.TNamed fqn _ -> do
     let pkg = tFqnToPkg fqn
     -- Look up the type definition
-    (thisPkg, thisPkg') <- getThisPkg
-    pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
+    pkg' <- getDepOrThisPkg pkg
     getTDefMaybe pkg' fqn <&> must
   _ -> throw sr "Not a named type"
 

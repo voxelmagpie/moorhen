@@ -18,6 +18,7 @@ import Vars
 -- TODO Make this a record
 type BlockCached = ([H.GenParam], H.Type, TFqn, Ctx, H.TraitsList, HashSet VName, H.WhereClauses)
 
+-- Subset of state-manipulating functions available during import preprocessing
 class (MonadVars m, MonadTcError m) => MonadTcImports m where
   type Pkg m :: K.Type
   depPkgExists :: PkgName -> m Bool
@@ -30,6 +31,7 @@ class (MonadVars m, MonadTcError m) => MonadTcImports m where
 
 class (MonadTcImports m) => MonadTc m where
   getThisPkg :: m (PkgName, Pkg m)
+  getDepOrThisPkg :: PkgName -> m (Pkg m)
   getTDefMaybe :: Pkg m -> TFqn -> m (Maybe H.TDef)
   getDataTypeDefMaybe :: Pkg m -> TFqn -> m (Maybe H.DataTypeDef)
   getVDefMaybe :: Pkg m -> VFqn -> m (Maybe H.VDef)

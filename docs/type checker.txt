@@ -7,3 +7,7 @@ Effects information is gathered while visiting the expression tree and stored in
 
 Type checking of definitions is split in order to handle recursion without causing the type checker to loop infinitely.
 Type definitions are handled by visitTDef and visitDataTypeDef, value definitions by visitVDef and visitVDefExpr.
+
+getDepOrThisPkg, getDepPkg, and getThisPkg are all separate.
+This is because it is important not to mix up accesses to the package currently being type checked and dependency packages that have already been fully visited.
+This is because code accessing definitions from the current package must be mindful of infinite loops due to recursive calls and must call the visit function for each definition rather than trying to access it in the HIR as it might not exist yet.

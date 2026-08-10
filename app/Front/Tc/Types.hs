@@ -48,8 +48,7 @@ implicitCast ctx e@(_, from, sr) to = do
         pure (H.EIntToF64 e, to, sr)
       (_, H.TNamed toFqn toGenArgs) -> do
         let pkg = tFqnToPkg toFqn
-        (thisPkg, thisPkg') <- getThisPkg
-        pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
+        pkg' <- getDepOrThisPkg pkg
         tDef <- getTDefMaybe pkg' toFqn <&> must
         when (tDef.tDefType /= H.IsTrait') $ throw sr errMsg
         let whs = [(from, List1 (toFqn, toGenArgs) [])]
@@ -262,8 +261,7 @@ verifyEffectAndConvertToList t = case t of
     pure $ sequence xs <&> concat
   H.TNamed fqn' _ -> do
     let pkg = tFqnToPkg fqn'
-    (thisPkg, thisPkg') <- getThisPkg
-    pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
+    pkg' <- getDepOrThisPkg pkg
     tDef <- getTDefMaybe pkg' fqn' <&> must
     pure $ if tDef.typeKind == EffectType then Just [t] else Nothing
   _ -> pure Nothing
@@ -273,8 +271,8 @@ getTDef2 ctx sr t = case t of
   H.TNamed fqn genArgs -> do
     let pkg = tFqnToPkg fqn
     -- Look up the type definition
-    (thisPkg, thisPkg') <- getThisPkg
-    pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
+    (thisPkg, _) <- getThisPkg
+    pkg' <- getDepOrThisPkg pkg
     tDef <- getTDefMaybe pkg' fqn <&> must
     assertM $ tDef.typeKind == MonoType
     when (tDef.tDefType /= H.IsDataDef) $ throw sr $ un (tFqnToName fqn) <> " is not a data type"

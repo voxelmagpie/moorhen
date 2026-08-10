@@ -77,8 +77,7 @@ tryCheckGenArgKinds xs = do
       H.TTuple {} -> shouldBe MonoType
       H.TNamed fqn _ -> do
         let pkg = tFqnToPkg fqn
-        (thisPkg, thisPkg') <- getThisPkg
-        pkg' <- if thisPkg == pkg then pure thisPkg' else getDepPkg pkg
+        pkg' <- getDepOrThisPkg pkg
         tDef <- getTDefMaybe pkg' fqn <&> must
         shouldBe tDef.typeKind
   getVar errMaybe <&> \case Just e -> Left e; _ -> Right ()

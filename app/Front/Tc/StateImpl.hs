@@ -85,6 +85,9 @@ instance MonadTc Tc where
   getThisPkg = do
     hir <- asks (.ir)
     pure (hir.name, hir)
+  getDepOrThisPkg pkgName = do
+    thisPkg <- asks (.ir)
+    if thisPkg.name == pkgName then pure thisPkg else getDepPkg pkgName
   getTDefMaybe hir fqn = do
     liftIO $ HT.lookup hir.tDefs1 fqn
   getDataTypeDefMaybe hir fqn = do
