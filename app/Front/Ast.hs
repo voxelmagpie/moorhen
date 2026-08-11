@@ -165,8 +165,7 @@ type Stmt = (Stmt', SrcRange)
 data Destructure'
   = DIgnore
   | DName VName IsMutable
-  | DTuple (List2 Destructure)
-  | DDataCons (List1 Destructure)
+  | DTupleLike (List1 Destructure)
   | DRecord [(VNameL, Destructure)]
   | DAs VNameL IsMutable Destructure
   deriving (Show, Generic, Eq)

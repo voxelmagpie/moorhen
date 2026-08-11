@@ -4,7 +4,7 @@
 
 module Front.Tc.Patterns where
 
-import Control.Monad (forM, unless)
+import Control.Monad (forM, unless, when)
 import Front.Ast qualified as A
 import Front.Hir qualified as H
 import Front.Tc.Context
@@ -81,26 +81,24 @@ visitDestructure ctxVar t (destr, sr) = case destr of
     modVar ctxVar $ \ctx -> ctx {variables = Variable mut name uid t ctx.closureDepth : ctx.variables}
     d' <- visitDestructure ctxVar t d
     pure (H.DAs name uid mut d', t, sr)
-  A.DTuple ds -> do
-    ts <- case t of
-      H.TTuple ts | length ts == length ds -> pure ts
-      H.TTuple _ -> throw sr "Wrong number of tuple elements"
-      _ -> throw sr "Not a tuple"
-    ds' <- forM (zipList2 ts ds) $ uncurry $ visitDestructure ctxVar
-    pure (H.DTuple ds', t, sr)
-  A.DDataCons ds -> do
-    ctx <- getVar ctxVar
-    (dataTypeDef, (tFqn, genArgs)) <- getTDef2 ctx sr t
-    (name, ts) <- case dataTypeDef.dataCons of
-      List1 (H.DataCons (name, _) (H.TupleFields xs)) []
-        | notNull xs -> do
-            let gpMap = zip dataTypeDef.t1.genParams genArgs <&> first (.fqn)
-            let ts = xs <&> substituteGenerics gpMap
-            pure (name, must $ listToList1 ts)
-      _ -> throw sr "Expected a type of form data X(A, B, ...)"
-    ds' <- forM (zipList1 ts ds) $ uncurry $ visitDestructure ctxVar
-    let dCons = H.DataConsInfo tFqn name 0 True True dataTypeDef.isEnumType
-    pure (H.DDataCons dCons ds', t, sr)
+  A.DTupleLike ds -> case t of
+    H.TTuple ts -> do
+      when (length ds /= length ts) $ throw sr "Wrong number of tuple elements"
+      ds' <- forM (zipList2 ts (must $ listToList2 $ toList ds)) $ uncurry $ visitDestructure ctxVar
+      pure (H.DTuple ds', t, sr)
+    _ -> do
+      ctx <- getVar ctxVar
+      (dataTypeDef, (tFqn, genArgs)) <- getTDef2 ctx sr t
+      (name, ts) <- case dataTypeDef.dataCons of
+        List1 (H.DataCons (name, _) (H.TupleFields xs)) []
+          | notNull xs -> do
+              let gpMap = zip dataTypeDef.t1.genParams genArgs <&> first (.fqn)
+              let ts = xs <&> substituteGenerics gpMap
+              pure (name, must $ listToList1 ts)
+        _ -> throw sr "Expected a type of form data X(A, B, ...)"
+      ds' <- forM (zipList1 ts ds) $ uncurry $ visitDestructure ctxVar
+      let dCons = H.DataConsInfo tFqn name 0 True True dataTypeDef.isEnumType
+      pure (H.DDataCons dCons ds', t, sr)
   A.DRecord fields -> do
     ctx <- getVar ctxVar
     (dataTypeDef, (tFqn, genArgs)) <- getTDef2 ctx sr t

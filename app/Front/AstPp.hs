@@ -166,7 +166,6 @@ prettyPrintDestructure :: Destructure -> Text
 prettyPrintDestructure (DIgnore, _) = "_"
 prettyPrintDestructure (DName n False, _) = un n
 prettyPrintDestructure (DName n True, _) = "mut " <> un n
-prettyPrintDestructure (DTuple ps, _) = T.concat ["(", intercalate ", " (prettyPrintDestructure <$> toList ps), ")"]
-prettyPrintDestructure (DDataCons ps, _) = ".(" <> T.intercalate ", " (prettyPrintDestructure <$> toList ps) <> ")"
+prettyPrintDestructure (DTupleLike ps, _) = T.concat ["(", intercalate ", " (prettyPrintDestructure <$> toList ps), ")"]
 prettyPrintDestructure (DRecord fields, _) = T.concat [".", "{", intercalate ", " $ fields <&> \((n, _), p) -> un n <> " = " <> prettyPrintDestructure p, "}"]
 prettyPrintDestructure (DAs (name, _) mut d, _) = T.concat [if mut then "mut " else "", un name, "@", prettyPrintDestructure d]

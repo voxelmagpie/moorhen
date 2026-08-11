@@ -321,8 +321,7 @@ destructure =
         do
           _ <- symbol "."
           oneOf
-            [ (PredSym "(", dataConsTupleDestructure),
-              (PredSym "{", dataConsRecordDestructure)
+            [ (PredSym "{", dataConsRecordDestructure)
             ]
       )
     ]
@@ -330,17 +329,9 @@ destructure =
 tupleDestructure :: (Args) => IO A.Destructure
 tupleDestructure = do
   (_, startSr) <- symbol "("
-  d0 <- destructure <* symbol ","
-  List1 d1 ds <- list1 destructure (PredSym ",")
-  (_, endSr) <- symbol ")"
-  pure (A.DTuple (List2 d0 d1 ds), srcRangeOf startSr endSr)
-
-dataConsTupleDestructure :: (Args) => IO A.Destructure
-dataConsTupleDestructure = do
-  (_, startSr) <- symbol "("
   args <- list1 destructure (PredSym ",")
   (_, endSr) <- symbol ")"
-  pure (A.DDataCons args, srcRangeOf startSr endSr)
+  pure (A.DTupleLike args, srcRangeOf startSr endSr)
 
 dataConsRecordDestructure :: (Args) => IO A.Destructure
 dataConsRecordDestructure = do
