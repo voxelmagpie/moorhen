@@ -37,6 +37,8 @@ data Pred
   | PredInt
   | PredNot Pred
   | PredMany [Pred]
+  | PredRepeat0 Pred
+  | PredRepeat1 Pred
   | PredOneOf [Pred]
   | PredAlways
 
@@ -282,8 +284,8 @@ mkFnVDef kwSr name op genParams (params, paramsSr) retTypeMaybe whereClauses eff
 
 destructurePredicate :: Pred
 destructurePredicate =
-  let p = PredOneOf [PredVName, PredSym ".", PredUnderscore]
-   in PredOneOf [p, PredMany [PredSym "(", p]]
+  let p = PredOneOf [PredVName, PredUnderscore, PredKw KwMut]
+   in PredOneOf [p, PredMany [PredRepeat1 $ PredOneOf [PredSym "(", PredSym "{"], p]]
 
 destructure :: (Args) => IO A.Destructure
 destructure =
@@ -317,13 +319,7 @@ destructure =
               pure (A.DAs name False d, srcRangeOf name d)
             _ -> pure (A.DName (fst name) False, snd name)
       ),
-      ( PredSym ".",
-        do
-          _ <- symbol "."
-          oneOf
-            [ (PredSym "{", dataConsRecordDestructure)
-            ]
-      )
+      (PredSym "{", dataConsRecordDestructure)
     ]
 
 tupleDestructure :: (Args) => IO A.Destructure
@@ -1568,6 +1564,8 @@ oneOf xs = do
             PredInt -> "{integer}"
             PredNot p -> "not " <> f p
             PredMany ps -> T.intercalate " " (f <$> ps)
+            PredRepeat0 p -> "(" <> f p <> ")*"
+            PredRepeat1 p -> "(" <> f p <> ")+"
             PredOneOf ps -> T.intercalate ", " (f <$> ps)
             PredAlways -> "{any}"
 
@@ -1598,46 +1596,68 @@ optWithPrefixTk t p = do
 
 predMatch :: (Args) => Pred -> IO Bool
 predMatch p' = do
-  let go :: (Args) => [TokenL] -> Pred -> IO Bool
-      go ts = \case
+  tks <- getVar ?tokens
+  tokens <- newVar tks
+
+  let go :: (Args) => Pred -> IO Bool
+      go = \case
         PredTk t ->
-          case ts of
-            ((t', _) : _) | t' == t -> pure True
+          getVar tokens >>= \ts -> case ts of
+            ((t', _) : _) | t' == t -> modVar tokens tail $> True
             _ -> pure False
         PredVName ->
-          case ts of
-            ((Ident _, _) : _) -> pure True
+          getVar tokens >>= \ts -> case ts of
+            ((Ident _, _) : _) -> modVar tokens tail $> True
             _ -> pure False
         PredUnderscore ->
-          case ts of
-            ((Ident (VName "_"), _) : _) -> pure True
+          getVar tokens >>= \ts -> case ts of
+            ((Ident (VName "_"), _) : _) -> modVar tokens tail $> True
             _ -> pure False
         PredTName ->
-          case ts of
-            ((TypeName _, _) : _) -> pure True
+          getVar tokens >>= \ts -> case ts of
+            ((TypeName _, _) : _) -> modVar tokens tail $> True
             _ -> pure False
         PredSym s ->
-          case ts of
-            ((Symbol s', _) : _) | s == s' -> pure True
+          getVar tokens >>= \ts -> case ts of
+            ((Symbol s', _) : _) | s == s' -> modVar tokens tail $> True
             _ -> pure False
         PredKw x ->
-          case ts of
-            ((Kw x', _) : _) | x == x' -> pure True
+          getVar tokens >>= \ts -> case ts of
+            ((Kw x', _) : _) | x == x' -> modVar tokens tail $> True
             _ -> pure False
         PredInt ->
-          case ts of
-            ((IntLiteral _, _) : _) -> pure True
+          getVar tokens >>= \ts -> case ts of
+            ((IntLiteral _, _) : _) -> modVar tokens tail $> True
             _ -> pure False
-        PredNot p -> not <$> go ts p
+        PredNot p -> not <$> go p
         PredMany [] -> pure True
         PredMany (p : ps) -> do
-          x <- go ts p
-          if x then go (tail ts) (PredMany ps) else pure False
-        PredOneOf ps -> anyM (go ts) ps
+          tokensBak <- getVar tokens
+          x <- go p
+          if x
+            then do
+              y <- go (PredMany ps)
+              if y then pure True else setVar tokens tokensBak $> False
+            else do
+              pure False
+        PredRepeat0 p -> do
+          let go2 = do
+                x <- go p
+                if x then go2 else pure ()
+          go2
+          pure True
+        PredRepeat1 p -> do
+          x <- go p
+          if x
+            then do
+              _ <- go $ PredRepeat0 p
+              pure True
+            else
+              pure False
+        PredOneOf ps -> anyM go ps
         PredAlways -> pure True
 
-  ts <- getVar ?tokens
-  go ts p'
+  go p'
 
 -- Assumes the predicate has already been matched
 consumePred :: (Args) => Pred -> IO ()
@@ -1649,9 +1669,11 @@ consumePred = \case
   PredSym _ -> void anyToken
   PredKw _ -> void anyToken
   PredInt -> void anyToken
-  PredNot _ -> pure ()
+  PredNot _ -> undefined
   PredMany [] -> pure ()
-  PredMany (_ : ps) -> void anyToken >> consumePred (PredMany ps)
+  PredMany (p : ps) -> do
+    consumePred p
+    consumePred (PredMany ps)
   PredOneOf ps -> do
     let go [] = pure ()
         go (p : ps') = do
@@ -1660,4 +1682,14 @@ consumePred = \case
             then consumePred p
             else go ps'
     go ps
+  PredRepeat0 p -> do
+    let go = do
+          matches <- predMatch p
+          if matches
+            then consumePred p
+            else go
+    go
+  PredRepeat1 p -> do
+    consumePred p
+    consumePred $ PredRepeat0 p
   PredAlways -> pure ()
