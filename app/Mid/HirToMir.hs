@@ -85,12 +85,12 @@ toMir' = do
           let vFqn = VFqn $ "_" <> un tFqn <> "_" <> un name
           t <- cvtType dataTypeDef.t1.selfType
           ps <- forM xs cvtType
-          let type' = M.TFunc ps t def False
+          let type' = M.TFunc ps t (M.Effects True True) False
           let pNames = [0 .. length xs - 1] <&> M.LocalVarUid
           let params = zip pNames ps <&> \(uid, t') -> (uid, Nothing, t', sr)
           let getters = pNames <&> \uid -> (M.EVar uid, sr)
           let e = mkDataConsInit ps getters dcIdx sr
-          let fn = M.Fn params t e def vFqn False
+          let fn = M.Fn params t e (M.Effects True True) vFqn False
           let nextUid = length xs
           let vDef = M.VDef (un name, sr) vFqn type' (Just (M.EClosure fn, sr)) Nothing nextUid
           addVDef vFqn vDef
