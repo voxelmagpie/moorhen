@@ -45,7 +45,7 @@ main' = do
 
     when (cfg.outputDebugAst || cfg.outputDebugHir || cfg.outputDebugMir) $ createDirectoryIfMissing False outDir
 
-    case cfg.action of
+    case (if cfg.help then Just ActHelp else cfg.action) of
       Just ActHelp ->
         TIO.putStrLn helpFile
       Just ActTests -> do
