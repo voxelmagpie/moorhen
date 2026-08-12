@@ -159,7 +159,7 @@ visitBlockDecl outerCtx blkTDef = do
 
 -- !! The where clause types are from the caller's perspective, i.e. generic args are substituted
 -- There may be duplicates if 2 generic args map to the same type. That is fine.
-findTraitImpls' :: (MonadTc m) => Ctx -> [(H.Type, List1 H.TraitRef)] -> SrcRange -> m H.WhereClauseTraitsList
+findTraitImpls' :: forall m. (MonadTc m) => Ctx -> [(H.Type, List1 H.TraitRef)] -> SrcRange -> m H.WhereClauseTraitsList
 findTraitImpls' ctx whs sr = do
   -- TODO Cache this
   allMods <- findAllModules ctx
@@ -176,16 +176,32 @@ findTraitImpls' ctx whs sr = do
       case genArgsMaybe of
         Left _ -> pure Nothing
         Right xs -> pure $ Just (fqn, xs, ts, gps, wh)
-    forM requiredTraits $ \tr -> do
+    forM requiredTraits $ \tr@(traitFqn, _) -> do
+      trait <- getTrait ctx.tcIn traitFqn
       let fromImpls = flip filter allMods'' $ \(_, _, ts, _, _) -> tr `elem` toList ts
-      let fromWheres' src =
+
+      let fromWheres' :: H.FromWhereClauseSource -> Maybe H.WhereTraitLoc
+          fromWheres' src =
             let ws = toList $ case src of
                   H.FromBlockWheres -> ctx.blockWhereClauses
                   H.FromVDefWheres -> ctx.vDefWhereClauses
+                whereClausesTotal = length ws
              in listToMaybe $ flip mapMaybe (zip [0 :: Int ..] ws) $ \(i, (wt, traits')) ->
-                  case elemIndex tr $ toList traits' of
-                    Just j | wt == t -> Just (src, i, j)
-                    _ -> Nothing
+                  let whereClauseTraitsTotal = length traits'
+                   in case elemIndex tr $ toList traits' of
+                        Just j
+                          | wt == t ->
+                              Just
+                                $ H.WhereTraitLoc
+                                  { src,
+                                    whereClauseIdx = i,
+                                    whereClausesTotal,
+                                    whereClauseTraitIdx = j,
+                                    whereClauseTraitsTotal,
+                                    traitDefsTotal = length trait.vDefs
+                                  }
+                        _ -> Nothing
+
       let fromWheres = case (fromWheres' H.FromBlockWheres, fromWheres' H.FromVDefWheres) of
             (Nothing, Nothing) -> Nothing
             (Just x, Nothing) -> Just x
@@ -194,7 +210,7 @@ findTraitImpls' ctx whs sr = do
       let typeTraitStr = typeToText t <> " : " <> traitRefToText tr
       case (fromImpls, fromWheres) of
         ([], Nothing) -> throw sr $ "No implementation found for " <> typeTraitStr
-        ([], Just (src, i, j)) -> pure (tr, FromWhereClause src i j)
+        ([], Just loc) -> pure (tr, FromWhereClause loc)
         ([(fqn, xs, _, gps, modWh)], Nothing) -> do
           let gpMap = zip (gps <&> (.fqn)) xs
           wh <- findTraitImpls ctx gpMap modWh sr
@@ -207,7 +223,7 @@ findTraitImpls ::
 findTraitImpls ctx gpMap whs = findTraitImpls' ctx (toList whs <&> first (substituteGenerics gpMap))
 
 lookupMembVNameInCtxWhere ::
-  (MonadTc m) => Ctx -> H.Type -> Either VName OpName -> m [(H.FromWhereClauseSource, Int, Int, H.TraitVDef)]
+  (MonadTc m) => Ctx -> H.Type -> Either VName OpName -> m [(H.WhereTraitLoc, H.Trait, H.TraitVDef)]
 lookupMembVNameInCtxWhere ctx t name = do
   let ss = [(H.FromBlockWheres, ctx.blockWhereClauses), (H.FromVDefWheres, ctx.vDefWhereClauses)]
   xs <- forM ss $ \(src, whs) -> forM (zip [0 :: Int ..] $ toList whs) $ \(i, (t', traits)) -> do
@@ -216,7 +232,19 @@ lookupMembVNameInCtxWhere ctx t name = do
         traitIdx <- forM (zip [0 :: Int ..] $ toList traits) $ \(idx, (tr, _)) -> do
           trait <- getTrait ctx.tcIn tr
           let lookupName n = case HM.lookup n trait.names of
-                Just vDef -> [(src, i, idx, vDef)]
+                Just vDef ->
+                  [ ( H.WhereTraitLoc
+                        { src,
+                          whereClauseIdx = i,
+                          whereClausesTotal = length $ un whs,
+                          whereClauseTraitIdx = idx,
+                          whereClauseTraitsTotal = length traits,
+                          traitDefsTotal = length trait.vDefs
+                        },
+                      trait,
+                      vDef
+                    )
+                  ]
                 _ -> []
           pure $ case name of
             Left n -> lookupName n

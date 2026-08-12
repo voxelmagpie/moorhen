@@ -469,11 +469,10 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
               _ -> pure Nothing
           _ ->
             pure Nothing
-      Right (src, whereIdx, whereTraitIdx, vDef) -> do
-        let ctxWhs = case src of H.FromBlockWheres -> ctx.blockWhereClauses; H.FromVDefWheres -> ctx.vDefWhereClauses
-        let (_, traits) = toList ctxWhs !! whereIdx
-        let (traitFqn, traitGenArgs) = traits !! whereTraitIdx
-        trait <- getTrait ctx.tcIn traitFqn -- TODO have lookupMembVNameInCtxWhere return this
+      Right (traitLoc, trait, vDef) -> do
+        let ctxWhs = case traitLoc.src of H.FromBlockWheres -> ctx.blockWhereClauses; H.FromVDefWheres -> ctx.vDefWhereClauses
+        let (_, traits) = toList ctxWhs !! traitLoc.whereClauseIdx
+        let (_, traitGenArgs) = traits !! traitLoc.whereClauseTraitIdx
         let modGenArgs = snd3 lhs : traitGenArgs
         case vDef.vDef.type' of
           H.TFunc ps _ _ | isLeft (fst name) || length ps == expectedParamsCount -> do
@@ -486,7 +485,7 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
                   modGenArgs,
                   def,
                   vDef.vDef.whereClauses,
-                  Just (src, whereIdx, whereTraitIdx),
+                  Just traitLoc,
                   vDef.idx
                 )
           H.TFunc {} -> do
@@ -515,8 +514,8 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
             then do
               let genOverEfs = isGenericOverEffect modParams
               case whereClauseIdxMaybe of
-                Just (src, whereClauseIdx, whereClauseTraitIdx) -> do
-                  let x = H.EWheresGet {src, whereClauseIdx, whereClauseTraitIdx, fnIdx, nextWhereClauses = def}
+                Just traitLoc -> do
+                  let x = H.EWheresGet {traitLoc, fnIdx, nextWhereClauses = def}
                   pure $ Left (x, t, sr)
                 _ -> do
                   let wh = H.WhereClauseTraits {mod = modWhs, vDef = def}
@@ -557,8 +556,8 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
         let genOverEfs = isGenericOverEffect modParams || isGenericOverEffect vDefGenParams
         whs <- findTraitImpls ctx gpMap vDefWhereClauses (thd3 lhs)
         case whereClauseIdxMaybe of
-          Just (src, whereClauseIdx, whereClauseTraitIdx) -> do
-            let x = H.EWheresGet {src, whereClauseIdx, whereClauseTraitIdx, fnIdx, nextWhereClauses = whs}
+          Just traitLoc -> do
+            let x = H.EWheresGet {traitLoc, fnIdx, nextWhereClauses = whs}
             pure (x, t, sr)
           _ -> do
             let whs' = H.WhereClauseTraits {mod = modWhs, vDef = whs}

@@ -111,7 +111,7 @@ data Trait = Trait
   deriving (Show, Generic, Eq)
 
 data TraitVDef = TraitVDef
-  { genParams :: [GenParam], -- Dose not include trait gen params
+  { genParams :: [GenParam], -- Does not include trait gen params
     idx :: Int,
     vDef :: VDef
   }
@@ -167,10 +167,24 @@ type IsGenericOverEffectType = Bool
 data FromWhereClauseSource = FromBlockWheres | FromVDefWheres
   deriving (Show, Generic, Eq)
 
+-- The indices are for finding the vdef in the where clause parameters
+-- The lengths are for tracking whether the data is stored in a product type or not
+data WhereTraitLoc = WhereTraitLoc
+  { src :: FromWhereClauseSource,
+    whereClauseIdx :: Int,
+    whereClausesTotal :: Int,
+    whereClauseTraitIdx :: Int,
+    whereClauseTraitsTotal :: Int,
+    traitDefsTotal :: Int
+  }
+  deriving (Show, Generic, Eq)
+
 -- The trait used for a where clause can come from another where clause or a concrete module
 -- If it comes from a where clause then the first Int is the index into the current function's where clauses and
 -- the second Int is the index into that where clause's list of traits
-data ChosenTrait = FromWhereClause FromWhereClauseSource Int Int | FromModule TFqn [Type] WhereClauseTraitsList
+data ChosenTrait
+  = FromWhereClause WhereTraitLoc
+  | FromModule TFqn [Type] WhereClauseTraitsList
   deriving (Show, Generic, Eq)
 
 -- For each where clause: for each trait in the where clause: chosen module
@@ -192,10 +206,7 @@ data Expr'
   | EVar LocalVarUid
   | EGlobal VFqn [Type] IsGenericOverEffectType WhereClauseTraits
   | EWheresGet
-      { -- The indices are for finding the vdef in the where clause parameters
-        src :: FromWhereClauseSource,
-        whereClauseIdx :: Int,
-        whereClauseTraitIdx :: Int,
+      { traitLoc :: WhereTraitLoc,
         fnIdx :: Int,
         nextWhereClauses :: WhereClauseTraitsList -- For generic trait functions
       }

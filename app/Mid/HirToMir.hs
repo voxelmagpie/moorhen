@@ -21,7 +21,7 @@ import GHC.Stack (HasCallStack)
 import MhPrelude
 import Mid.Mir qualified as M
 import Names
-import SrcLoc (SrcRange)
+import SrcLoc (SrcRange, srcRangeOf)
 import Vars
 
 -- MaybeAsync is for functions generic over the effect type
@@ -122,34 +122,35 @@ toMir' = do
             Just x -> Just <$> cvtExpr x.expr
             _ -> pure Nothing -- Builtin
             --
-          let mkWrapper whUid retType expr =
-                let wrapperType = M.TFunc [M.TVec] retType def False
-                    sr = snd vDef.name
-                    clo =
+          let mkWrapper clauses whUid retType expr = do
+                t <- mkWhereDataType $ un clauses <&> snd
+                let wrapperType = M.TFunc [t] retType (M.Effects True True) False
+                let sr = snd vDef.name
+                let clo =
                       M.EClosure
                         $ M.Fn
-                          { params = [(whUid, Nothing, M.TVec, sr)],
+                          { params = [(whUid, Nothing, t, sr)],
                             ret = retType,
                             expr,
-                            effects = def,
+                            effects = (M.Effects True True),
                             fqn = fqn,
                             isAsync = False
                           }
-                 in ((clo, sr), wrapperType)
+                pure ((clo, sr), wrapperType)
 
-          let (e, t) =
-                let e1 = exprMaybe
-                    (e2, t2) =
-                      if needsImplicitParam
-                        then
-                          mkWrapper whParamUid type' (must e1) & first Just
-                        else (e1, type')
-                    (e3, t3) =
-                      if needsBlockImplicitParam
-                        then
-                          mkWrapper whParamUidBlk t2 (must e2) & first Just
-                        else (e2, t2)
-                 in (e3, t3)
+          (e, t) <- do
+            let e1 = exprMaybe
+            (e2, t2) <-
+              if needsImplicitParam
+                then
+                  mkWrapper vDef.whereClauses whParamUid type' (must e1) <&> first Just
+                else pure (e1, type')
+            (e3, t3) <-
+              if needsBlockImplicitParam
+                then
+                  mkWrapper vDef.moduleWhereClauses whParamUidBlk t2 (must e2) <&> first Just
+                else pure (e2, t2)
+            pure (e3, t3)
 
           nextUid <- getNextVarUid
           addVDef fqn $ M.VDef vDefName fqn t e Nothing nextUid
@@ -285,45 +286,62 @@ gatherTraitWhereData :: (MonadToMir m) => SrcRange -> (H.TraitRef, H.ChosenTrait
 gatherTraitWhereData sr ((traitFqn, _), chosenTrait) = do
   a <- getIsAsync
   case chosenTrait of
-    H.FromWhereClause src whereClauseIdx whereClauseTraitIdx -> do
-      whUid <- getWhereParamUid src
+    H.FromWhereClause loc -> do
+      whUid <- getWhereParamUid loc.src
       let getVarExpr = (M.EVar $ must whUid, sr)
-      let indexed1 = (M.EIndex getVarExpr whereClauseIdx Nothing, sr)
-      pure (M.EIndex indexed1 whereClauseTraitIdx Nothing, sr)
+      let indexed1 =
+            if loc.whereClausesTotal <= 1
+              then
+                getVarExpr
+              else
+                (M.EIndex getVarExpr loc.whereClauseIdx Nothing, sr)
+      pure
+        $ if loc.whereClauseTraitsTotal <= 1
+          then
+            getVarExpr
+          else
+            (M.EIndex indexed1 loc.whereClauseTraitIdx Nothing, sr)
     H.FromModule modFqn _genArgs modWhs -> do
       pkg <- getPkg $ tFqnToPkg modFqn
-      modWhs' <- gatherTraitsWhereData sr modWhs
       trait <- getTrait traitFqn
       let traitNamesOrdered = trait.vDefs <&> ((.vDef.name) >>> fst)
       let fqns = traitNamesOrdered <&> \n -> VFqn $ un modFqn <> "." <> un n
       let exprs = fqns <&> \x -> (M.EGlobal x, sr)
       exprs' <-
-        if null modWhs
-          then pure exprs
-          else do
+        case modWhs of
+          [] -> pure exprs
+          (w : ws) -> do
+            modWhs' <- gatherTraitsWhereData sr $ List1 w ws
             forM (zip fqns exprs) $ \(vFqn, e') -> do
               vDef <- getVDef pkg vFqn
               vDefType <- cvtType vDef.type'
               pure (M.EFnCall e' [modWhs'] a vDefType, sr)
 
-      pure (M.EVec exprs', sr)
+      pure $ case exprs' of
+        [] -> (M.EDoBlock [] Nothing, sr)
+        e : es -> mkProductExprIfMany $ List1 e es
 
-gatherTraitsWhereData :: (MonadToMir m) => SrcRange -> [List1 (H.TraitRef, H.ChosenTrait)] -> m M.Expr
+mkProductExprIfMany :: List1 M.Expr -> M.Expr
+mkProductExprIfMany xs = case xs of
+  List1 x [] -> x
+  List1 x (y : zs) -> (M.EProduct $ List2 x y zs, srcRangeOf xs xs)
+
+gatherTraitsWhereData :: (MonadToMir m) => SrcRange -> List1 (List1 (H.TraitRef, H.ChosenTrait)) -> m M.Expr
 gatherTraitsWhereData sr ts = do
   xs <- forM ts $ \xs -> do
     ys <- forM xs $ gatherTraitWhereData sr
-    pure (M.EVec $ toList ys, sr)
-  pure (M.EVec xs, sr)
+    pure $ mkProductExprIfMany ys
+  pure $ mkProductExprIfMany xs
 
 mkApplyWhereClausesExpr ::
   forall m. (MonadToMir m) => SrcRange -> M.Type -> H.WhereClauseTraitsList -> M.Expr -> m M.Expr
 mkApplyWhereClausesExpr sr t' ts defExpr = do
   a <- getIsAsync
 
-  if null ts
-    then pure defExpr
-    else do
-      xs <- gatherTraitsWhereData sr ts
+  case ts of
+    [] -> pure defExpr
+    y : ys -> do
+      xs <- gatherTraitsWhereData sr $ List1 y ys
       pure (M.EFnCall defExpr [xs] a t', sr)
 
 cvtExpr :: forall m. (MonadToMir m) => H.Expr -> m M.Expr
@@ -354,16 +372,36 @@ cvtExpr (e, t, sr) = do
         else do
           t' <- cvtType t
 
-          let t1 = if null traits.vDef then t' else M.TFunc [M.TAny] t' def a
+          t1 <-
+            if null traits.vDef
+              then pure t'
+              else do
+                whDataType <- mkWhereDataType $ traits.vDef <&> (<&> fst)
+                pure $ M.TFunc [whDataType] t' def a
           e1 <- mkApplyWhereClausesExpr sr t1 traits.mod (M.EGlobal fqn, sr)
           e2 <- mkApplyWhereClausesExpr sr t' traits.vDef e1
           pure $ fst e2
-    H.EWheresGet {src, whereClauseIdx, whereClauseTraitIdx, fnIdx, nextWhereClauses} -> do
-      whUid <- getWhereParamUid src
+    H.EWheresGet {traitLoc, fnIdx, nextWhereClauses} -> do
+      whUid <- getWhereParamUid traitLoc.src
       let getVarExpr = (M.EVar $ must whUid, sr)
-          indexed1 = (M.EIndex getVarExpr whereClauseIdx Nothing, sr)
-          indexed2 = (M.EIndex indexed1 whereClauseTraitIdx Nothing, sr)
-          indexed3 = (M.EIndex indexed2 fnIdx Nothing, sr)
+          indexed1 =
+            if traitLoc.whereClausesTotal <= 1
+              then
+                getVarExpr
+              else
+                (M.EIndex getVarExpr traitLoc.whereClauseIdx Nothing, sr)
+          indexed2 =
+            if traitLoc.whereClauseTraitsTotal <= 1
+              then
+                indexed1
+              else
+                (M.EIndex indexed1 traitLoc.whereClauseTraitIdx Nothing, sr)
+          indexed3 =
+            if traitLoc.traitDefsTotal <= 1
+              then
+                indexed2
+              else
+                (M.EIndex indexed2 fnIdx Nothing, sr)
       t' <- cvtType t
       e' <- mkApplyWhereClausesExpr sr t' nextWhereClauses indexed3
       pure $ fst e'
@@ -798,11 +836,45 @@ cvtType t'' = do
                       let recs = concatMap snd dcs''
                       let sumType = M.TSum $ fst <$> dcs''
                       pure ((if fqn `elem` recs then M.TRecursive else identity) sumType, recs)
-                H.IsTrait' ->
-                  pure (M.TProduct $ List2 M.TAny M.TVec [], [])
+                H.IsTrait' -> do
+                  traitType <- mkTraitType fqn
+                  pure (M.TProduct $ List2 M.TAny traitType [], [])
         H.TEffect _ -> error "Abstract type"
         H.TLifetime _ -> error "Abstract type"
   fst <$> cvtType' [] t''
+
+mkTraitType :: (MonadToMir m) => TFqn -> m M.Type
+mkTraitType fqn = do
+  trait <- getTrait fqn
+  ts <- forM trait.vDefs $ \vDef -> do
+    t <- cvtType vDef.vDef.type'
+    if null $ un vDef.vDef.whereClauses
+      then
+        pure t
+      else do
+        wh <- mkWhereDataType $ un vDef.vDef.whereClauses <&> snd
+        pure $ M.TFunc [wh] t (M.Effects True True) False
+  pure $ case ts of
+    [] -> M.TUnit
+    [x] -> x
+    x : y : zs -> M.TProduct $ List2 x y zs
+
+mkProductIfMany :: List1 M.Type -> M.Type
+mkProductIfMany xs = case xs of
+  List1 x [] -> x
+  List1 x (y : zs) -> M.TProduct $ List2 x y zs
+
+mkWhereDataType :: (MonadToMir m) => [List1 H.TraitRef] -> m M.Type
+mkWhereDataType wh = do
+  let go traitRefs = do
+        xs <- forM traitRefs $ \(fqn, _) -> mkTraitType fqn
+        pure $ mkProductIfMany xs
+  case wh of
+    [] -> undefined
+    [x] -> go x
+    (x : xs) -> do
+      ys <- forM (List1 x xs) go
+      pure $ mkProductIfMany ys
 
 type ToMirM = ReaderT State IO
 
