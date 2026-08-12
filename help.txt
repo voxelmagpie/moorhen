@@ -14,3 +14,4 @@ Options:
   --timings              Output timings.txt file
   --debug-ast
   --debug-hir
+  --debug-mir

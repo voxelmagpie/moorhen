@@ -43,18 +43,19 @@ main' = do
 
     let outDir = fromMaybe "out" cfg.outDir
 
-    when (cfg.outputDebugAst || cfg.outputDebugHir) $ createDirectoryIfMissing False outDir
-
-    builtins@(builtinsHir, builtinsMir, builtinsTimings) <-
-      compileBuiltins cfg.outputDebugAst cfg.outputDebugHir builtinsDir outDir
+    when (cfg.outputDebugAst || cfg.outputDebugHir || cfg.outputDebugMir) $ createDirectoryIfMissing False outDir
 
     case cfg.action of
       Just ActHelp ->
         TIO.putStrLn helpFile
-      Just ActTests ->
-        runTests builtins cfg.outputDebugAst cfg.outputDebugHir builtinsMjs outDir
+      Just ActTests -> do
+        builtins <- compileBuiltins cfg.outputDebugAst cfg.outputDebugHir cfg.outputDebugMir builtinsDir outDir
+        runTests builtins cfg.outputDebugAst cfg.outputDebugHir cfg.outputDebugMir builtinsMjs outDir
       Nothing -> putStrLn "Moorhen compiler v0.1.0"
       Just action -> do
+        (builtinsHir, builtinsMir, builtinsTimings) <-
+          compileBuiltins cfg.outputDebugAst cfg.outputDebugHir cfg.outputDebugMir builtinsDir outDir
+
         srcPath <- case action of
           ActBuild x -> pure x
           ActCheck x -> pure x
@@ -69,7 +70,7 @@ main' = do
           ActBuild _ -> do
             createDirectoryIfMissing False outDir
 
-            (stlibMir, stLibTimings2) <- compileStLib (builtinsHir, builtinsMir) stLibHir
+            (stlibMir, stLibTimings2) <- compileStLib cfg.outputDebugMir outDir (builtinsHir, builtinsMir) stLibHir True
 
             let pkgs = [(PkgName "#builtins", builtinsHir), (PkgName "#stlib", stLibHir)]
 
@@ -82,7 +83,7 @@ main' = do
 
             let pkgsMir = HM.fromList [(PkgName "#builtins", builtinsMir), (PkgName "#stlib", stlibMir)]
 
-            (mir', genMirTimings) <- genPackageMir pkgsHir pkgsMir pkgName True
+            (mir', genMirTimings) <- genPackageMir cfg.outputDebugMir outDir pkgsHir pkgsMir pkgName True
 
             let pkgsMir' = HM.insert pkgName mir' pkgsMir
             (js, toJsTimings) <- genJS pkgName pkgsMir'

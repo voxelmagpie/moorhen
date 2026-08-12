@@ -10,7 +10,7 @@ import Control.Monad (forM, forM_, unless, void, when)
 import Control.Monad.Reader (MonadIO (liftIO), ReaderT (runReaderT), asks)
 import Control.Monad.ST (runST)
 import Data.Bits (Bits (shiftL, shiftR), (.&.), (.|.))
-import Data.Char (chr, intToDigit, ord)
+import Data.Char (chr, ord)
 import Data.Functor (($>))
 import Data.HashMap.Strict qualified as HM
 import Data.HashTable.IO qualified as HT
@@ -26,6 +26,7 @@ import Mid.Mir (Mir)
 import Mid.Mir qualified as M
 import Names
 import SrcLoc
+import Strings
 import Vars
 
 data JsOutput = JsOutput
@@ -76,26 +77,7 @@ constToText = \case
   M.CI32 i -> tShow i <> "|0"
   M.CFloat x -> x
   M.CBool x -> if x then "true" else "false"
-  M.CString x -> "\"" <> T.pack (reverse $ filterString "" $ T.unpack x) <> "\""
-    where
-      filterString :: String -> String -> String
-      filterString result [] = result
-      filterString result (c : cs) = case c of
-        '\n' -> filterString ('n' : '\\' : result) cs
-        '"' -> filterString ('"' : '\\' : result) cs
-        '\\' -> filterString ('\\' : '\\' : result) cs
-        '\f' -> filterString ('f' : '\\' : result) cs
-        '\r' -> filterString ('r' : '\\' : result) cs
-        '\t' -> filterString ('t' : '\\' : result) cs
-        '\v' -> filterString ('v' : '\\' : result) cs
-        '\0' -> filterString ('0' : '\\' : result) cs
-        _
-          | c < ' ' || ord c == 0x7f ->
-              let hex = ord c
-                  h1 = intToDigit (hex `shiftR` 4)
-                  h2 = intToDigit (hex .&. 0xF)
-               in filterString (h2 : h1 : 'x' : '\\' : result) cs
-        _ -> filterString (c : result) cs
+  M.CString x -> "\"" <> T.pack (reverse $ filterString $ T.unpack x) <> "\""
   M.CFn fqn ->
     filterFqn (un fqn)
   M.CVec es -> do

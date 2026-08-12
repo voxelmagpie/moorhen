@@ -29,7 +29,8 @@ import Front.Parser
 import Front.Tc.Tc (typeCheckPackage)
 import MhPrelude
 import Mid.HirToMir (toMir)
-import Mid.Mir (Mir)
+import Mid.Mir (Mir (Mir))
+import Mid.MirPp (ppMir)
 import Mid.Optimiser (optimisePackage)
 import Names
 import SrcLoc
@@ -155,8 +156,15 @@ findSrcFiles dirOrFilePath pkg dumpDir writeAsts = do
 
   pure (fst2Of3 <$> xs, mconcat $ thd3 <$> xs)
 
-compileBuiltins :: Bool -> Bool -> FilePath -> FilePath -> IO (Hir, Mir, Timings)
-compileBuiltins outputDebugAst outputDebugHir builtinsDir outDir = do
+writeMir :: FilePath -> Mir -> IO ()
+writeMir outDir mir = do
+  let Mir pkgName _ = mir
+  x <- ppMir mir
+  withFile (outDir </> T.unpack (un pkgName) <.> ".mir.txt") WriteMode
+    $ flip TIO.hPutStrLn x
+
+compileBuiltins :: Bool -> Bool -> Bool -> FilePath -> FilePath -> IO (Hir, Mir, Timings)
+compileBuiltins outputDebugAst outputDebugHir outputDebugMir builtinsDir outDir = do
   (hir, t) <-
     compilePackage
       (PkgName "#builtins")
@@ -175,6 +183,8 @@ compileBuiltins outputDebugAst outputDebugHir builtinsDir outDir = do
   let pkgs' = HM.fromList [(PkgName "#builtins", mir')]
   mir <- optimisePackage pkgs' (PkgName "#builtins") -- Needed for setting values in VDefs
   optimisingEndTime <- getCurrentTime
+
+  when outputDebugMir $ writeMir outDir mir
 
   pure
     ( hir,
@@ -195,29 +205,15 @@ typeCheckStLib outputDebugAst outputDebugHir stlibDir builtinsHir outDir = do
     outputDebugHir
     outDir
 
-compileStLib :: (Hir, Mir) -> Hir -> IO (Mir, Timings)
-compileStLib (builtinsHir, builtinsMir) hir = do
+compileStLib :: Bool -> FilePath -> (Hir, Mir) -> Hir -> Bool -> IO (Mir, Timings)
+compileStLib outputDebugMir outDir (builtinsHir, builtinsMir) hir optimise = do
   let pkgs = HM.fromList [(PkgName "#builtins", builtinsHir), (PkgName "#stlib", hir)]
+  let pkgs' = HM.fromList [(PkgName "#builtins", builtinsMir)]
 
-  loweringStartTime <- getCurrentTime
-  mir' <- toMir pkgs (PkgName "#stlib")
-  loweringEndTime <- getCurrentTime
+  genPackageMir outputDebugMir outDir pkgs pkgs' (PkgName "#stlib") optimise
 
-  optimisingStartTime <- getCurrentTime
-  let pkgs' = HM.fromList [(PkgName "#builtins", builtinsMir), (PkgName "#stlib", mir')]
-  mir <- optimisePackage pkgs' (PkgName "#stlib")
-  optimisingEndTime <- getCurrentTime
-
-  pure
-    ( mir,
-      def
-        { lowering = diffUTCTime loweringEndTime loweringStartTime,
-          optimising = diffUTCTime optimisingEndTime optimisingStartTime
-        }
-    )
-
-genPackageMir :: HashMap PkgName Hir -> HashMap PkgName Mir -> PkgName -> Bool -> IO (Mir, Timings)
-genPackageMir pkgsHir pkgsMir pkgName optimise = do
+genPackageMir :: Bool -> FilePath -> HashMap PkgName Hir -> HashMap PkgName Mir -> PkgName -> Bool -> IO (Mir, Timings)
+genPackageMir outputDebugMir outDir pkgsHir pkgsMir pkgName optimise = do
   loweringStartTime <- getCurrentTime
   mir <- toMir pkgsHir pkgName
   loweringEndTime <- getCurrentTime
@@ -236,6 +232,8 @@ genPackageMir pkgsHir pkgsMir pkgName optimise = do
           { lowering = diffUTCTime loweringEndTime loweringStartTime,
             optimising = diffUTCTime optimisingEndTime optimisingStartTime
           }
+
+  when outputDebugMir $ writeMir outDir mir'
 
   pure (mir', timings)
 

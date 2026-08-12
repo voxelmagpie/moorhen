@@ -14,7 +14,7 @@ import Data.List (isSuffixOf, sort)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (diffUTCTime, getCurrentTime)
-import Driver
+import Driver (byteStringToTextOrThrow, compilePackage, genPackageMir)
 import Error
 import Front.Hir (Hir)
 import Front.LexPost (convertTokenStream)
@@ -22,9 +22,7 @@ import Front.Lexer (lexMoorhen)
 import Front.Parser
 import Front.Tc.Tc (typeCheckPackage)
 import MhPrelude
-import Mid.HirToMir (toMir)
 import Mid.Mir (Mir)
-import Mid.Optimiser (optimisePackage)
 import Names (Namespace (Namespace), PkgName (PkgName))
 import System.Directory (createDirectoryIfMissing, listDirectory)
 import System.Exit (die)
@@ -32,11 +30,11 @@ import System.FilePath ((<.>), (</>))
 import System.IO (IOMode (WriteMode), withFile)
 import Timings (Timings (..), writeTimingsFile)
 
-compileTest :: (Hir, Mir) -> String -> Bool -> Bool -> FilePath -> IO (Mir, Timings)
-compileTest builtins testName writeAsts writeHir outDir = do
+compileTest :: (Hir, Mir) -> String -> Bool -> Bool -> Bool -> FilePath -> IO (Mir, Timings)
+compileTest builtins testName writeAsts writeHir writeMir outDir = do
   let pkgName = PkgName $ T.pack $ '#' : testName
 
-  (hir, timings) <-
+  (hir, timings1) <-
     compilePackage
       pkgName
       ("tests" </> testName <.> ".mh")
@@ -46,23 +44,11 @@ compileTest builtins testName writeAsts writeHir outDir = do
       outDir
 
   let pkgs = HM.fromList [(PkgName "#builtins", fst builtins), (pkgName, hir)]
+  let pkgs' = HM.fromList [(PkgName "#builtins", snd builtins)]
 
-  loweringStartTime <- getCurrentTime
-  mir' <- toMir pkgs pkgName
-  loweringEndTime <- getCurrentTime
+  (mir, timings2) <- genPackageMir writeMir outDir pkgs pkgs' pkgName True
 
-  optimisingStartTime <- getCurrentTime
-  let pkgs' = HM.fromList [(PkgName "#builtins", snd builtins), (pkgName, mir')]
-  mir <- optimisePackage pkgs' pkgName
-  optimisingEndTime <- getCurrentTime
-
-  pure
-    ( mir,
-      timings
-        { lowering = diffUTCTime loweringEndTime loweringStartTime,
-          optimising = diffUTCTime optimisingEndTime optimisingStartTime
-        }
-    )
+  pure (mir, timings1 <> timings2)
 
 runTcErrTests :: Hir -> IO ()
 runTcErrTests builtins = do
@@ -85,8 +71,8 @@ runTcErrTests builtins = do
     -- TIO.putStrLn $ T.unlines $ tcErrs <&> formatError True
     when (null tcErrs) $ die $ T.unpack $ "Type checker error test did not fail:\n" <> src
 
-runTests :: (Hir, Mir, Timings) -> Bool -> Bool -> Text -> FilePath -> IO ()
-runTests (builtinsHir, builtinsMir, builtinsTimings) writeAsts writeHir builtinsJs outDir = do
+runTests :: (Hir, Mir, Timings) -> Bool -> Bool -> Bool -> Text -> FilePath -> IO ()
+runTests (builtinsHir, builtinsMir, builtinsTimings) writeAsts writeHir writeMir builtinsJs outDir = do
   runTcErrTests builtinsHir
 
   putStrLn "Compiling tests..."
@@ -98,7 +84,7 @@ runTests (builtinsHir, builtinsMir, builtinsTimings) writeAsts writeHir builtins
 
   testsMirTimings <- forM testNames $ \n -> do
     putStrLn $ "Compiling " <> n
-    x <- compileTest (builtinsHir, builtinsMir) n writeAsts writeHir outDir
+    x <- compileTest (builtinsHir, builtinsMir) n writeAsts writeHir writeMir outDir
     pure (T.pack n, x)
 
   let testsMir = testsMirTimings <&> \(n, (mir, _)) -> (PkgName $ "#" <> n, mir)

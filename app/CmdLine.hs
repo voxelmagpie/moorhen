@@ -106,6 +106,7 @@ extractArgs xs = case runState (runExceptT go) (xs', def) of
               modify' $ second $ \s -> s {timings = True}
             "--debug-ast" -> modify' $ second $ \s -> s {outputDebugAst = True}
             "--debug-hir" -> modify' $ second $ \s -> s {outputDebugHir = True}
+            "--debug-mir" -> modify' $ second $ \s -> s {outputDebugMir = True}
             _ -> throwError $ ArgsException $ "Unknown configuration option: " <> T.pack option
           go
         Nothing -> pure ()
@@ -129,6 +130,7 @@ data Config = Config
     stlibPath :: Maybe FilePath,
     timings :: Bool,
     outputDebugAst :: Bool,
-    outputDebugHir :: Bool
+    outputDebugHir :: Bool,
+    outputDebugMir :: Bool
   }
   deriving (Show, Eq, Generic, Default)
