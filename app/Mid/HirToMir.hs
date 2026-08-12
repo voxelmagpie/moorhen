@@ -789,7 +789,7 @@ cvtType t'' = do
         H.TTuple xs -> do
           xs' <- forM xs $ cvtType' seen
           pure (M.TProduct $ fst <$> xs', concatMap snd $ toList xs')
-        H.TNamed fqn _ -> do
+        H.TNamed fqn genArgs -> do
           let pkgName = tFqnToPkg fqn
           if fqn `elem` seen
             then do
@@ -811,8 +811,8 @@ cvtType t'' = do
                     "String" -> pure M.TString
                     "Bool" -> pure M.TBool
                     "Any" -> pure M.TAny
-                    "Lazy" -> pure M.TLazy
-                    "Vec" -> pure M.TVec
+                    "Lazy" -> forM genArgs cvtType <&> M.TVec . (!! 0)
+                    "Vec" -> forM genArgs cvtType <&> M.TVec . (!! 0)
                     _ -> error "Unknown builtin"
                 H.IsDataDef -> do
                   dataTypeDef <- getDataTypeDef pkg fqn

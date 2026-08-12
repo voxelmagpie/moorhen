@@ -43,9 +43,9 @@ data Type
   | TReal
   | TUnit
   | TString
-  | TVec
+  | TVec Type
   | TBool
-  | TLazy
+  | TLazy Type
   | TAny -- For generics, and untyped javascript values
   -- Where the type would appear within itself it is replaced with TAny.
   -- E.g. data X (Vec[(X, Int)]) -> TRecursive $ TVec $ TProduct(TAny, TInt)
