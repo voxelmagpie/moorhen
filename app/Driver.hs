@@ -19,7 +19,7 @@ import Data.Text.IO qualified as TIO
 import Data.Time (diffUTCTime, getCurrentTime)
 import Error
 import Front.Ast (Ast)
-import Front.AstPp qualified
+import Front.AstPp (ppAst)
 import Front.Hir (Hir)
 import Front.HirFns (showHir)
 import Front.LexPost (convertTokenStream)
@@ -97,7 +97,7 @@ parseFile srcPath srcMaybe dumpDir writeAsts = do
       $ show ast'
     withFile (dumpDir </> name <.> ".ast.txt") WriteMode
       $ flip TIO.hPutStrLn
-      $ Front.AstPp.prettyPrint ast'
+      $ ppAst ast'
 
   pure
     ( ast',

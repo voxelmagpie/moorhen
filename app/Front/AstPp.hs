@@ -17,155 +17,155 @@ import Names
 
 -- Pretty printing functions
 
-prettyPrint :: Ast -> Text
-prettyPrint ast = T.concat [unlines $ prettyPrintVDef <$> HM.elems ast.vDefs, "\n", unlines $ prettyPrintTDef <$> HM.elems ast.tDefs, "\n"]
+ppAst :: Ast -> Text
+ppAst ast = T.concat [unlines $ ppVDef <$> HM.elems ast.vDefs, "\n", unlines $ ppTDef <$> HM.elems ast.tDefs, "\n"]
 
-prettyPrintVDef :: VDef -> Text
-prettyPrintVDef vDef =
-  T.concat ["let ", prettyPrintGenParams vDef.genParams, un $ fst vDef.name, case vDef.op of Just (o, _) -> " " <> un o; _ -> "", t, wh, case vDef.expr of Just e -> " = " <> prettyPrintExpr e; _ -> ""]
+ppVDef :: VDef -> Text
+ppVDef vDef =
+  T.concat ["let ", ppGenParams vDef.genParams, un $ fst vDef.name, case vDef.op of Just (o, _) -> " " <> un o; _ -> "", t, wh, case vDef.expr of Just e -> " = " <> ppExpr e; _ -> ""]
   where
     t = case vDef.typeExpr of
-      Just x -> " : " <> prettyPrintType x
+      Just x -> " : " <> ppType x
       Nothing -> ""
-    wh = prettyPrintWheres vDef.whereClauses
+    wh = ppWheres vDef.whereClauses
 
-prettyPrintWheres :: WhereClauses -> Text
-prettyPrintWheres =
+ppWheres :: WhereClauses -> Text
+ppWheres =
   \case
     [] -> ""
     xs -> " where " <> T.intercalate "," (xs <&> mkWh)
   where
-    mkWh (l, r) = prettyPrintType l <> " : " <> prettyPrintType r
+    mkWh (l, r) = ppType l <> " : " <> ppType r
 
-prettyPrintGenParams :: [(TypeKind, TNameL)] -> Text
-prettyPrintGenParams gp = if null gp then "" else T.concat ["[", intercalate ", " ((\(k, (n, _)) -> prettyPrintTypeKind k <> un n) <$> gp), "] "]
+ppGenParams :: [(TypeKind, TNameL)] -> Text
+ppGenParams gp = if null gp then "" else T.concat ["[", intercalate ", " ((\(k, (n, _)) -> ppTypeKind k <> un n) <$> gp), "] "]
 
-prettyPrintTypeKind :: TypeKind -> Text
-prettyPrintTypeKind = \case MonoType -> ""; EffectType -> "@"; AbstractType -> "'"
+ppTypeKind :: TypeKind -> Text
+ppTypeKind = \case MonoType -> ""; EffectType -> "@"; AbstractType -> "'"
 
-prettyPrintTDef :: TDef -> Text
-prettyPrintTDef tDef =
-  let genericStr = prettyPrintGenParams tDef.genParams
+ppTDef :: TDef -> Text
+ppTDef tDef =
+  let genericStr = ppGenParams tDef.genParams
    in case tDef.tDef of
-        TypeAliasDecl t -> T.concat ["type ", genericStr, un $ fst tDef.name, " = ", prettyPrintType t]
-        TypeDecl cons ds -> T.concat ["data ", genericStr, un $ fst tDef.name, " = ", intercalate " | " (prettyPrintDataCons <$> toList cons), ds']
+        TypeAliasDecl t -> T.concat ["type ", genericStr, un $ fst tDef.name, " = ", ppType t]
+        TypeDecl cons ds -> T.concat ["data ", genericStr, un $ fst tDef.name, " = ", intercalate " | " (ppDataCons <$> toList cons), ds']
           where
             ds' = if null ds then "" else "\n\tderiving " <> T.intercalate "," (ds <&> \x -> "\"" <> fst x <> "\"")
         BuiltinTypeDecl -> T.concat ["builtin ", genericStr, un $ fst tDef.name]
-        Module t defs sigList wh -> T.concat ["mod ", genericStr, un $ fst tDef.name, " for ", prettyPrintType t, sigList', prettyPrintWheres wh, "\n", defs', "\n"]
+        Module t defs sigList wh -> T.concat ["mod ", genericStr, un $ fst tDef.name, " for ", ppType t, sigList', ppWheres wh, "\n", defs', "\n"]
           where
-            defs' = T.unlines $ toList defs.vDefsOrdered <&> (prettyPrintVDef >>> ("\t" <>))
-            sigList' = if null sigList then "" else " : " <> T.intercalate ", " (prettyPrintType <$> sigList)
-        Trait defs sigList wh -> T.concat ["trait ", genericStr, un $ fst tDef.name, sigList', prettyPrintWheres wh, "\n", defs', "\n"]
+            defs' = T.unlines $ toList defs.vDefsOrdered <&> (ppVDef >>> ("\t" <>))
+            sigList' = if null sigList then "" else " : " <> T.intercalate ", " (ppType <$> sigList)
+        Trait defs sigList wh -> T.concat ["trait ", genericStr, un $ fst tDef.name, sigList', ppWheres wh, "\n", defs', "\n"]
           where
-            defs' = T.unlines $ toList defs.vDefsOrdered <&> (prettyPrintVDef >>> ("\t" <>))
-            sigList' = if null sigList then "" else " : " <> T.intercalate ", " (prettyPrintType <$> sigList)
+            defs' = T.unlines $ toList defs.vDefsOrdered <&> (ppVDef >>> ("\t" <>))
+            sigList' = if null sigList then "" else " : " <> T.intercalate ", " (ppType <$> sigList)
 
-prettyPrintDataCons :: DataCons -> Text
-prettyPrintDataCons (DataCons name contents) = unwords [un (fst name), prettyPrintDataConsContents contents]
+ppDataCons :: DataCons -> Text
+ppDataCons (DataCons name contents) = unwords [un (fst name), ppDataConsContents contents]
 
-prettyPrintDataConsContents :: Fields -> Text
-prettyPrintDataConsContents (TupleFields names) = unwords $ prettyPrintType <$> names
-prettyPrintDataConsContents (RecordFields record) = T.concat ["{", intercalate ", " $ toList record <&> \((name, _), t) -> un name <> " : " <> prettyPrintType t, "}"]
+ppDataConsContents :: Fields -> Text
+ppDataConsContents (TupleFields names) = unwords $ ppType <$> names
+ppDataConsContents (RecordFields record) = T.concat ["{", intercalate ", " $ toList record <&> \((name, _), t) -> un name <> " : " <> ppType t, "}"]
 
-prettyPrintType :: TypeExpr -> Text
-prettyPrintType (TUnit, _) = "()"
-prettyPrintType (TTuple types, _) = T.concat ["(", intercalate ", " (prettyPrintType <$> toList types), ")"]
-prettyPrintType (TFunc args ret ef, _) = T.concat ["(\\", intercalate ", " (prettyPrintType <$> args), " -> ", prettyPrintType ret, ef', ")"]
+ppType :: TypeExpr -> Text
+ppType (TUnit, _) = "()"
+ppType (TTuple types, _) = T.concat ["(", intercalate ", " (ppType <$> toList types), ")"]
+ppType (TFunc args ret ef, _) = T.concat ["(\\", intercalate ", " (ppType <$> args), " -> ", ppType ret, ef', ")"]
   where
     ef' = case ef of
       [] -> ""
-      ts -> "@(" <> T.intercalate ", " (ts <&> prettyPrintType) <> ")"
-prettyPrintType (TNamed name [], _) = un $ fst name
-prettyPrintType (TNamed name params, _) = T.concat [un $ fst name, "[", intercalate ", " (prettyPrintType <$> params), "]"]
-prettyPrintType (TEffect ef, _) = case ef of
+      ts -> "@(" <> T.intercalate ", " (ts <&> ppType) <> ")"
+ppType (TNamed name [], _) = un $ fst name
+ppType (TNamed name params, _) = T.concat [un $ fst name, "[", intercalate ", " (ppType <$> params), "]"]
+ppType (TEffect ef, _) = case ef of
   [] -> "@()"
-  ts -> "@(" <> T.intercalate ", " (ts <&> prettyPrintType) <> ")"
-prettyPrintType (TLifetime n, _) = "'" <> un n
+  ts -> "@(" <> T.intercalate ", " (ts <&> ppType) <> ")"
+ppType (TLifetime n, _) = "'" <> un n
 
-prettyPrintVarDecl :: Destructure -> Maybe TypeExpr -> Text
-prettyPrintVarDecl d t = prettyPrintDestructure d <> (case t of Just t' -> " : " <> prettyPrintType t'; _ -> "")
+ppVarDecl :: Destructure -> Maybe TypeExpr -> Text
+ppVarDecl d t = ppDestructure d <> (case t of Just t' -> " : " <> ppType t'; _ -> "")
 
-prettyPrintExpr :: Expr -> Text
-prettyPrintExpr (ELitInt n, _) = tShow n
-prettyPrintExpr (ELitFloat t, _) = t
-prettyPrintExpr (ELitBool b, _) = tShow b
-prettyPrintExpr (ELitString s, _) = T.concat ["\"", T.map (\c -> if c >= ' ' then c else '?') s, "\""]
-prettyPrintExpr (EVar name [], _) = un name
-prettyPrintExpr (EVar name gArgs, _) = un name <> "[" <> T.intercalate ", " (prettyPrintType <$> gArgs) <> "]"
-prettyPrintExpr (EClosure params body, _) = T.concat ["\\", intercalate ", " (params <&> uncurry prettyPrintVarDecl), " -> ", prettyPrintExpr body]
-prettyPrintExpr (EFnCall f args, _) = T.concat [prettyPrintExpr f, "(", argsStr, ")"]
+ppExpr :: Expr -> Text
+ppExpr (ELitInt n, _) = tShow n
+ppExpr (ELitFloat t, _) = t
+ppExpr (ELitBool b, _) = tShow b
+ppExpr (ELitString s, _) = T.concat ["\"", T.map (\c -> if c >= ' ' then c else '?') s, "\""]
+ppExpr (EVar name [], _) = un name
+ppExpr (EVar name gArgs, _) = un name <> "[" <> T.intercalate ", " (ppType <$> gArgs) <> "]"
+ppExpr (EClosure params body, _) = T.concat ["\\", intercalate ", " (params <&> uncurry ppVarDecl), " -> ", ppExpr body]
+ppExpr (EFnCall f args, _) = T.concat [ppExpr f, "(", argsStr, ")"]
   where
-    argsStr = if null args then "" else T.intercalate ", " $ prettyPrintExpr <$> args
-prettyPrintExpr (EDoBlock [] (Just e), _) = prettyPrintExpr e
-prettyPrintExpr (EDoBlock [] Nothing, _) = "{}"
-prettyPrintExpr (EDoBlock stmts eMaybe, _) = T.concat ["{ ", T.concat $ toList stmts <&> \s -> prettyPrintStmt s <> " ; ", case eMaybe of Just x -> prettyPrintExpr x <> " "; _ -> "", "}"]
-prettyPrintExpr (EIf cond t f, _) = T.concat ["(if ", prettyPrintExpr cond, " then ", prettyPrintExpr t, " else ", prettyPrintExpr f, ")"]
-prettyPrintExpr (ETuple es, _) = T.concat ["(", intercalate ", " (prettyPrintExpr <$> toList es), ")"]
-prettyPrintExpr (EAnd l r, _) = T.concat ["(", prettyPrintExpr l, " and ", prettyPrintExpr r, ")"]
-prettyPrintExpr (EOr l r, _) = T.concat ["(", prettyPrintExpr l, " or ", prettyPrintExpr r, ")"]
-prettyPrintExpr (EMatch e ps, _) = "case " <> prettyPrintExpr e <> " of " <> T.intercalate ", " (prettyPrintPatternBranch <$> toList ps)
-prettyPrintExpr (EDataCons name [], _) = un (fst name)
-prettyPrintExpr (EDataCons name gArgs, _) = un (fst name) <> "[" <> T.intercalate ", " (prettyPrintType <$> gArgs) <> "]"
-prettyPrintExpr (EMemberCall lhs (name, _) args, _) = T.concat [prettyPrintExpr lhs, ".", getName name, "(", argsStr, ")"]
+    argsStr = if null args then "" else T.intercalate ", " $ ppExpr <$> args
+ppExpr (EDoBlock [] (Just e), _) = ppExpr e
+ppExpr (EDoBlock [] Nothing, _) = "{}"
+ppExpr (EDoBlock stmts eMaybe, _) = T.concat ["{ ", T.concat $ toList stmts <&> \s -> ppStmt s <> " ; ", case eMaybe of Just x -> ppExpr x <> " "; _ -> "", "}"]
+ppExpr (EIf cond t f, _) = T.concat ["(if ", ppExpr cond, " then ", ppExpr t, " else ", ppExpr f, ")"]
+ppExpr (ETuple es, _) = T.concat ["(", intercalate ", " (ppExpr <$> toList es), ")"]
+ppExpr (EAnd l r, _) = T.concat ["(", ppExpr l, " and ", ppExpr r, ")"]
+ppExpr (EOr l r, _) = T.concat ["(", ppExpr l, " or ", ppExpr r, ")"]
+ppExpr (EMatch e ps, _) = "case " <> ppExpr e <> " of " <> T.intercalate ", " (ppPatternBranch <$> toList ps)
+ppExpr (EDataCons name [], _) = un (fst name)
+ppExpr (EDataCons name gArgs, _) = un (fst name) <> "[" <> T.intercalate ", " (ppType <$> gArgs) <> "]"
+ppExpr (EMemberCall lhs (name, _) args, _) = T.concat [ppExpr lhs, ".", getName name, "(", argsStr, ")"]
   where
     getName = \case Left x -> un x; Right x -> un x
-    argsStr = if null args then "" else T.intercalate ", " $ prettyPrintExpr <$> args
-prettyPrintExpr (ETry e cs fin, _) = T.concat ["try ", prettyPrintExpr e, cs', fin']
+    argsStr = if null args then "" else T.intercalate ", " $ ppExpr <$> args
+ppExpr (ETry e cs fin, _) = T.concat ["try ", ppExpr e, cs', fin']
   where
     cs' =
       T.unwords $ toList cs <&> \(x, _, e') ->
         " catch " <> case x of
-          Just (t, d) -> prettyPrintType t <> " " <> prettyPrintDestructure d
-          _ -> "_" <> " -> " <> prettyPrintExpr e'
-    fin' = fromMaybe "" $ fin <&> \f -> " finally " <> prettyPrintExpr f
-prettyPrintExpr (EThrow e, _) = "throw " <> prettyPrintExpr e
-prettyPrintExpr (ELitList es, _) = "[" <> T.intercalate ", " (prettyPrintExpr <$> es) <> "]"
-prettyPrintExpr (EIndex e i, _) = prettyPrintExpr e <> "." <> tShow i
-prettyPrintExpr (EFieldAccess e (f, _), _) = prettyPrintExpr e <> "." <> un f
-prettyPrintExpr (ERecordInit t fs, _) = prettyPrintType t <> "{ " <> T.intercalate ", " (ppField <$> toList fs) <> " }"
+          Just (t, d) -> ppType t <> " " <> ppDestructure d
+          _ -> "_" <> " -> " <> ppExpr e'
+    fin' = fromMaybe "" $ fin <&> \f -> " finally " <> ppExpr f
+ppExpr (EThrow e, _) = "throw " <> ppExpr e
+ppExpr (ELitList es, _) = "[" <> T.intercalate ", " (ppExpr <$> es) <> "]"
+ppExpr (EIndex e i, _) = ppExpr e <> "." <> tShow i
+ppExpr (EFieldAccess e (f, _), _) = ppExpr e <> "." <> un f
+ppExpr (ERecordInit t fs, _) = ppType t <> "{ " <> T.intercalate ", " (ppField <$> toList fs) <> " }"
   where
     ppField :: (VNameL, Maybe Expr) -> Text
     ppField ((n, _), Nothing) = un n
-    ppField ((n, _), Just e') = un n <> " : " <> prettyPrintExpr e'
-prettyPrintExpr (EBreak, _) = "break"
-prettyPrintExpr (EContinue, _) = "continue"
-prettyPrintExpr (EUpdate e setters, _) = prettyPrintExpr e <> "{ " <> T.intercalate ", " (setters <&> f) <> " }"
+    ppField ((n, _), Just e') = un n <> " : " <> ppExpr e'
+ppExpr (EBreak, _) = "break"
+ppExpr (EContinue, _) = "continue"
+ppExpr (EUpdate e setters, _) = ppExpr e <> "{ " <> T.intercalate ", " (setters <&> f) <> " }"
   where
-    f (chain, e') = T.concat (toList chain <&> (fst >>> g >>> ("." <>))) <> " = " <> prettyPrintExpr e'
+    f (chain, e') = T.concat (toList chain <&> (fst >>> g >>> ("." <>))) <> " = " <> ppExpr e'
     g = \case
       AccessorChainName n -> un n
       AccessorChainIndex i -> tShow i
-prettyPrintExpr (EExplicitType e t, _) = prettyPrintExpr e <> " : " <> prettyPrintType t
-prettyPrintExpr (EAs e t, _) = prettyPrintExpr e <> " as " <> prettyPrintType t
+ppExpr (EExplicitType e t, _) = ppExpr e <> " : " <> ppType t
+ppExpr (EAs e t, _) = ppExpr e <> " as " <> ppType t
 
-prettyPrintPatternBranch :: MatchBranch -> Text
-prettyPrintPatternBranch b = prettyPrintPattern b.pattern <> g <> " -> " <> prettyPrintExpr b.expr
+ppPatternBranch :: MatchBranch -> Text
+ppPatternBranch b = ppPattern b.pattern <> g <> " -> " <> ppExpr b.expr
   where
-    g = case b.guard of Just x -> " | " <> prettyPrintExpr x; _ -> ""
+    g = case b.guard of Just x -> " | " <> ppExpr x; _ -> ""
 
-prettyPrintPattern :: Pattern -> Text
-prettyPrintPattern (PIgnore, _) = "_"
-prettyPrintPattern (PName n, _) = un n
-prettyPrintPattern (PTuple ps, _) = T.concat ["(", intercalate ", " (prettyPrintPattern <$> toList ps), ")"]
-prettyPrintPattern (PDataCons (n, _) ps, _) = un n <> "(" <> T.intercalate ", " (prettyPrintPattern <$> ps) <> ")"
-prettyPrintPattern (PRecord (n', _) fields, _) = T.concat [un n', "{", intercalate ", " $ fields <&> \((n, _), p) -> un n <> " = " <> prettyPrintPattern p, "}"]
+ppPattern :: Pattern -> Text
+ppPattern (PIgnore, _) = "_"
+ppPattern (PName n, _) = un n
+ppPattern (PTuple ps, _) = T.concat ["(", intercalate ", " (ppPattern <$> toList ps), ")"]
+ppPattern (PDataCons (n, _) ps, _) = un n <> "(" <> T.intercalate ", " (ppPattern <$> ps) <> ")"
+ppPattern (PRecord (n', _) fields, _) = T.concat [un n', "{", intercalate ", " $ fields <&> \((n, _), p) -> un n <> " = " <> ppPattern p, "}"]
 
-prettyPrintStmt :: Stmt -> Text
-prettyPrintStmt (SLet destr typ expr, _) =
-  T.concat ["let ", prettyPrintDestructure destr, case typ of Just x -> " : " <> prettyPrintType x; _ -> "", " = ", prettyPrintExpr expr]
-prettyPrintStmt (SRecLet name typ expr, _) =
-  T.concat ["let rec ", un $ fst name, " :: ", prettyPrintType typ, " = ", prettyPrintExpr expr]
-prettyPrintStmt (SExpr expr, sr) = prettyPrintExpr (expr, sr)
-prettyPrintStmt (SWhen condExpr thenExpr, _) = T.concat ["when ", prettyPrintExpr condExpr, " do ", prettyPrintExpr thenExpr]
-prettyPrintStmt (SAssign (lhs, _) rhs, _) = T.concat ["set ", un lhs, " = ", prettyPrintExpr rhs]
-prettyPrintStmt (SForEach {destr, inExpr, bodyExpr}, _) = T.concat ["foreach ", prettyPrintDestructure destr, " in ", prettyPrintExpr inExpr, " do ", prettyPrintExpr bodyExpr]
-prettyPrintStmt (SLoop e, _) = T.concat ["loop ", prettyPrintExpr e]
+ppStmt :: Stmt -> Text
+ppStmt (SLet destr typ expr, _) =
+  T.concat ["let ", ppDestructure destr, case typ of Just x -> " : " <> ppType x; _ -> "", " = ", ppExpr expr]
+ppStmt (SRecLet name typ expr, _) =
+  T.concat ["let rec ", un $ fst name, " :: ", ppType typ, " = ", ppExpr expr]
+ppStmt (SExpr expr, sr) = ppExpr (expr, sr)
+ppStmt (SWhen condExpr thenExpr, _) = T.concat ["when ", ppExpr condExpr, " do ", ppExpr thenExpr]
+ppStmt (SAssign (lhs, _) rhs, _) = T.concat ["set ", un lhs, " = ", ppExpr rhs]
+ppStmt (SForEach {destr, inExpr, bodyExpr}, _) = T.concat ["foreach ", ppDestructure destr, " in ", ppExpr inExpr, " do ", ppExpr bodyExpr]
+ppStmt (SLoop e, _) = T.concat ["loop ", ppExpr e]
 
-prettyPrintDestructure :: Destructure -> Text
-prettyPrintDestructure (DIgnore, _) = "_"
-prettyPrintDestructure (DName n False, _) = un n
-prettyPrintDestructure (DName n True, _) = "mut " <> un n
-prettyPrintDestructure (DTupleLike ps, _) = T.concat ["(", intercalate ", " (prettyPrintDestructure <$> toList ps), ")"]
-prettyPrintDestructure (DRecord fields, _) = T.concat [".", "{", intercalate ", " $ fields <&> \((n, _), p) -> un n <> " = " <> prettyPrintDestructure p, "}"]
-prettyPrintDestructure (DAs (name, _) mut d, _) = T.concat [if mut then "mut " else "", un name, "@", prettyPrintDestructure d]
+ppDestructure :: Destructure -> Text
+ppDestructure (DIgnore, _) = "_"
+ppDestructure (DName n False, _) = un n
+ppDestructure (DName n True, _) = "mut " <> un n
+ppDestructure (DTupleLike ps, _) = T.concat ["(", intercalate ", " (ppDestructure <$> toList ps), ")"]
+ppDestructure (DRecord fields, _) = T.concat [".", "{", intercalate ", " $ fields <&> \((n, _), p) -> un n <> " = " <> ppDestructure p, "}"]
+ppDestructure (DAs (name, _) mut d, _) = T.concat [if mut then "mut " else "", un name, "@", ppDestructure d]
