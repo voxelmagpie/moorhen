@@ -7,6 +7,7 @@
 module Front.AstPp where
 
 import Data.HashMap.Strict qualified as HM
+import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Text (intercalate, unlines, unwords)
 import Data.Text qualified as T
@@ -18,7 +19,10 @@ import Names
 -- Pretty printing functions
 
 ppAst :: Ast -> Text
-ppAst ast = T.concat [unlines $ ppVDef <$> HM.elems ast.vDefs, "\n", unlines $ ppTDef <$> HM.elems ast.tDefs, "\n"]
+ppAst ast =
+  let vDefs = sortOn ((.name) >>> fst >>> un) (HM.elems ast.vDefs)
+      tDefs = sortOn ((.name) >>> fst >>> un) (HM.elems ast.tDefs)
+   in T.concat [unlines $ ppVDef <$> vDefs, "\n", unlines $ ppTDef <$> tDefs, "\n"]
 
 ppVDef :: VDef -> Text
 ppVDef vDef =
