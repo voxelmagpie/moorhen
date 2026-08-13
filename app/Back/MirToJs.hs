@@ -85,6 +85,9 @@ constToText = \case
     -- TODO This is wrong. We want to refer to the inner constants by their id
     T.concat ["[", T.intercalate ", " es', "]"]
 
+isGlobalFnExpr :: M.Expr' -> Maybe M.Fn
+isGlobalFnExpr = \case M.EClosure f -> Just f; M.EAddFnEffects (M.EClosure f, _) _ -> Just f; _ -> Nothing
+
 trPkg :: (MonadTr m) => FilePath -> Text -> m JsOutput
 trPkg sourceRootRel fileName = do
   allPkgs' <- allPkgs
@@ -92,14 +95,14 @@ trPkg sourceRootRel fileName = do
   forM_ allPkgs' $ \(_pkgName, pkg) -> do
     vDefs <- getVDefs pkg
     forM_ vDefs $ \(vFqn, vDef) ->
-      forM_ vDef.exprMaybe $ \vDefExpr'@(vDefExpr, sr) -> do
+      forM_ vDef.exprMaybe $ \vDefExprL@(vDefExpr, sr) -> do
         setFile $ filePath $ snd vDef.name
         let name' = filterFqn (un vFqn)
         addLine [("// " <> un vFqn, snd vDef.name, Nothing)]
-        case vDefExpr of
-          M.EClosure fnId -> do
+        case isGlobalFnExpr vDefExpr of
+          Just fn -> do
             resetFnState
-            trClosure fnId sr (Just name') (Just $ fst vDef.name)
+            trClosure fn sr (Just name') (Just $ fst vDef.name)
           _ -> do
             case vDef.value of
               Just v -> do
@@ -116,7 +119,7 @@ trPkg sourceRootRel fileName = do
                     (name', snd vDef.name, Just $ fst vDef.name),
                     (" = [false, function() {", sr, Nothing)
                   ]
-                e'' <- trExpr vDefExpr'
+                e'' <- trExpr vDefExprL
                 unless (e'' == "undefined")
                   $ addLine [(T.concat ["return ", e'', ";"], sr, Nothing)]
                 addLine [("}];", sr, Nothing)]
@@ -264,9 +267,8 @@ trExpr (e, sr) = case e of
   M.EGlobal fqn -> do
     vDef <- getVDef fqn
     let fqn' = filterFqn $ un fqn
-    let isClosure = \case M.EClosure {} -> True; _ -> False
     case (vDef.exprMaybe, vDef.value) of
-      (Just (e', _), Nothing) | not $ isClosure e' -> do
+      (Just (e', _), Nothing) | isNothing $ isGlobalFnExpr e' -> do
         -- Evaluate thunk
         tmp <- mkTmpVarName
         addLine [(T.concat ["const " <> tmp <> " = $0builtins$1$2LazyFns$3eval(", fqn', ");"], sr, Nothing)]
