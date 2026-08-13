@@ -232,7 +232,8 @@ data Expr'
   | EBreak LocalVarUid -- UID is label
   | EContinue LocalVarUid -- UID is label
   | EUpdate Expr [Expr] EUpdatePart
-  | EImplicitCast Expr -- A change of type that doesn't generate code, e.g. changing effect types on a fn ptr
+  | EUnreachableCast Expr -- Casts a value of type Unreachable into anything else
+  | EAddFnEffects Expr -- Adds effects to a function's type
   | ESignExtendInt Expr -- Takes any integer type other than Int
   | EIntToF64 Expr
   | ECastNumber Expr -- Casts between Int, I32, Real, and sum types -> Int/I32

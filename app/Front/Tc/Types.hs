@@ -37,9 +37,9 @@ implicitCast ctx e@(_, from, sr) to = do
     then pure e
     else case (from, to) of
       (H.TFunc ps r ef, H.TFunc ps' r' ef') | ps == ps' && r == r' && ef `effectsSubsetOf` ef' -> do
-        pure (H.EImplicitCast e, to, sr)
+        pure (H.EAddFnEffects e, to, sr)
       (H.TNamed (TFqn "#builtins/:Unreachable") _, _) ->
-        pure (H.EImplicitCast e, to, sr)
+        pure (H.EUnreachableCast e, to, sr)
       (H.TNamed (TFqn "#builtins/:I32") _, H.TNamed (TFqn "#builtins/:Int") _) ->
         pure (H.ESignExtendInt e, to, sr)
       (H.TNamed (TFqn "#builtins/:I32") _, H.TNamed (TFqn "#builtins/:Real") _) ->
@@ -60,7 +60,7 @@ implicitCastHint :: H.Expr -> PType -> H.Expr
 implicitCastHint e@(_, from, sr) to = case (from, to) of
   (H.TNamed (TFqn "#builtins/:Unreachable") _, _) ->
     case pTypeToType to of
-      Just t -> (H.EImplicitCast e, t, sr)
+      Just t -> (H.EUnreachableCast e, t, sr)
       _ -> e
   (H.TNamed (TFqn "#builtins/:I32") _, TNamedP x@(TFqn "#builtins/:Int") _) ->
     (H.ESignExtendInt e, H.TNamed x [], sr)

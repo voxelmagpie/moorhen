@@ -256,8 +256,10 @@ constFoldInlineExpr startingVars exprToOpt = do
           go vars e <&> \(e', _) -> ((M.ESumTypeActiveIndex e', sr), Nothing)
         M.ESumTypeGet e ->
           go vars e <&> \(e', _) -> ((M.ESumTypeGet e', sr), Nothing)
-        M.EImplicitCast e ->
-          go vars e <&> \(e', _) -> ((M.EImplicitCast e', sr), Nothing)
+        M.EUnreachableCast e t ->
+          go vars e <&> \(e', _) -> ((M.EUnreachableCast e' t, sr), Nothing)
+        M.EAddFnEffects e t ->
+          go vars e <&> \(e', _) -> ((M.EAddFnEffects e' t, sr), Nothing)
         M.ESignExtendInt e ->
           go vars e <&> \(e', _) -> ((M.ESignExtendInt e', sr), Nothing)
         M.EIntToF64 e ->
@@ -418,9 +420,12 @@ renameExpr startingUidMap exprToRename = do
         M.EContinue uid -> do
           let uid' = must $ lookup uid uidMap
           pure (M.EContinue uid', sr)
-        M.EImplicitCast e -> do
+        M.EUnreachableCast e t -> do
           e' <- go uidMap e
-          pure (M.EImplicitCast e', sr)
+          pure (M.EUnreachableCast e' t, sr)
+        M.EAddFnEffects e t -> do
+          e' <- go uidMap e
+          pure (M.EAddFnEffects e' t, sr)
         M.ESignExtendInt e -> do
           e' <- go uidMap e
           pure (M.ESignExtendInt e', sr)
@@ -485,7 +490,8 @@ weighExpression (e, _) = case e of
   M.ESumTypeGet e' -> 1 + weighExpression e'
   M.EBreak {} -> 2
   M.EContinue {} -> 2
-  M.EImplicitCast e' -> 1 + weighExpression e'
+  M.EUnreachableCast e' _ -> 1 + weighExpression e'
+  M.EAddFnEffects e' _ -> weighExpression e'
   M.ESignExtendInt e' -> 1 + weighExpression e'
   M.EIntToF64 e' -> 1 + weighExpression e'
   M.ECastNumber e' _ -> 1 + weighExpression e'

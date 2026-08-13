@@ -96,7 +96,8 @@ ppExpr (e, _) = case e of
   ESumTypeGet e' -> "sumGet(" <> ppExpr e' <> ")"
   EBreak uid -> "break :" <> ppVar uid
   EContinue uid -> "continue :" <> ppVar uid
-  EImplicitCast e' -> "implicitCast(" <> ppExpr e' <> ")"
+  EUnreachableCast e' _ -> "unreachableCast(" <> ppExpr e' <> ")"
+  EAddFnEffects e' _ -> "addFnEffects(" <> ppExpr e' <> ")"
   ESignExtendInt e' -> "signExtend(" <> ppExpr e' <> ")"
   EIntToF64 e' -> "intToF64(" <> ppExpr e' <> ")"
   ECastNumber e' t -> "cast(" <> ppExpr e' <> " - to - " <> ppType t <> ")"

@@ -111,7 +111,8 @@ data Expr'
   | ESumTypeGet Expr
   | EBreak LocalVarUid -- UID is label
   | EContinue LocalVarUid -- UID is label
-  | EImplicitCast Expr
+  | EUnreachableCast Expr Type
+  | EAddFnEffects Expr Type -- Adds 0 or more of async, throwing, or impure to the function's effects
   | ESignExtendInt Expr
   | EIntToF64 Expr
   | ECastNumber Expr Type

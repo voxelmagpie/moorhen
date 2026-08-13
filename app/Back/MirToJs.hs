@@ -387,7 +387,9 @@ trExpr (e, sr) = case e of
     pure $ T.concat [e'', "[", tShow i, "]"]
   M.EBreak lbl -> addLine [("break " <> uidToText lbl <> ";", sr, Nothing)] $> "undefined"
   M.EContinue lbl -> addLine [("continue " <> uidToText lbl <> ";", sr, Nothing)] $> "undefined"
-  M.EImplicitCast e' ->
+  M.EUnreachableCast e' _ ->
+    trExpr e' $> "undefined"
+  M.EAddFnEffects e' _ ->
     trExpr e'
   M.ESignExtendInt e' -> trExpr e'
   M.EIntToF64 e' -> trExpr e'

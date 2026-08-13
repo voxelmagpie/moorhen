@@ -563,7 +563,14 @@ cvtExpr (e, t, sr) = do
       let updateVarExprs = updateVarUids <&> \uid -> (M.EVar uid, sr)
       updatePartExpr <- cvtUpdatePart expr' updateVarExprs updatePart
       pure $ M.EDoBlock updateLetStmts (Just updatePartExpr)
-    H.EImplicitCast expr -> fst <$> cvtExpr expr
+    H.EAddFnEffects expr -> do
+      expr' <- cvtExpr expr
+      t' <- cvtType t
+      pure $ M.EAddFnEffects expr' t'
+    H.EUnreachableCast expr -> do
+      expr' <- cvtExpr expr
+      t' <- cvtType t
+      pure $ M.EUnreachableCast expr' t'
     H.ESignExtendInt expr -> do
       expr' <- cvtExpr expr
       pure $ M.ESignExtendInt expr'
