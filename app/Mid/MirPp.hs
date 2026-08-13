@@ -63,14 +63,14 @@ ppConst = \case
 ppFn :: Fn -> Text
 ppFn fn = T.concat ["\\", paramsStr, " -> ", bodyStr]
   where
-    paramsStr = T.intercalate ", " $ fn.params <&> \(uid, n, t, _) -> ppVar uid <> maybe "" (un >>> ("$" <>)) n <> " : " <> ppType t
+    paramsStr = T.intercalate ", " $ fn.params <&> \(uid, n, t, _) -> ppVarWithNameL uid n <> " : " <> ppType t
     bodyStr = ppExpr fn.expr
 
 ppExpr :: Expr -> Text
 ppExpr (e, _) = case e of
   ELoadConst c -> ppConst c
   EVec es -> "[" <> T.intercalate ", " (ppExpr <$> es) <> "]"
-  EVar uid -> ppVar uid
+  EVar uid n -> ppVarWithName uid n
   EGlobal fqn -> un fqn
   EClosure fn -> ppFn fn
   EFnCall f args ia _ -> ppExpr f <> "(" <> T.intercalate ", " (ppExpr <$> args) <> ")" <> if ia then " async" else ""
@@ -104,15 +104,18 @@ ppExpr (e, _) = case e of
 
 ppStmt :: Stmt -> Text
 ppStmt (s, _) = case s of
-  SLet uid nameMaybe mut e' -> T.concat ["let ", if mut then "mut " else "", ppVarWithName uid nameMaybe, " = ", ppExpr e']
-  SRecLet uid nameMaybe e' -> T.concat ["let rec ", ppVarWithName uid nameMaybe, " = ", ppExpr e']
+  SLet uid nameMaybe mut e' -> T.concat ["let ", if mut then "mut " else "", ppVarWithNameL uid nameMaybe, " = ", ppExpr e']
+  SRecLet uid nameMaybe e' -> T.concat ["let rec ", ppVarWithNameL uid nameMaybe, " = ", ppExpr e']
   SLetUninit uid t -> T.concat ["let uninit ", ppVar uid, " : ", ppType t]
   SExpr e' -> ppExpr e'
-  SAssign uid nameMaybe e' -> T.concat [ppVarWithName uid nameMaybe, " = ", ppExpr e']
+  SAssign uid nameMaybe e' -> T.concat [ppVarWithNameL uid nameMaybe, " = ", ppExpr e']
   SLoop e' uid -> T.concat ["loop ", ppExpr e', " ", ppVar uid]
 
 ppVar :: LocalVarUid -> Text
 ppVar uid = "$" <> tShow (un uid)
 
-ppVarWithName :: LocalVarUid -> Maybe TextL -> Text
-ppVarWithName uid nameMaybe = "$" <> tShow (un uid) <> maybe "" (fst >>> ("$" <>)) nameMaybe
+ppVarWithNameL :: LocalVarUid -> Maybe TextL -> Text
+ppVarWithNameL uid nameMaybe = ppVarWithName uid (nameMaybe <&> fst)
+
+ppVarWithName :: LocalVarUid -> Maybe Text -> Text
+ppVarWithName uid nameMaybe = "$" <> tShow (un uid) <> maybe "" (\n -> " /* " <> n <> " */") nameMaybe

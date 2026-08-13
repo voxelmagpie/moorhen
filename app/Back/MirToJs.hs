@@ -182,7 +182,9 @@ uidToText = un >>> tShow >>> ("x" <>)
 
 trClosure :: (MonadTr m) => M.Fn -> SrcRange -> Maybe Text -> Maybe Text -> m ()
 trClosure fn sr cloName cloMhName = do
-  let params = T.intercalate "," $ fn.params <&> \(uid, _, _, _) -> uidToText uid
+  let params =
+        T.intercalate ", " $ fn.params <&> \(uid, nameMaybe, _, _) ->
+          uidToText uid <> case nameMaybe of Just n -> " /* " <> fst n <> " */"; _ -> ""
 
   let asyncKw = if fn.isAsync then "async " else ""
   let nameComment = case cloMhName of Just n -> " // " <> n; _ -> ""
@@ -263,7 +265,7 @@ trExpr :: (MonadTr m) => M.Expr -> m Text
 trExpr (e, sr) = case e of
   M.ELoadConst c -> trConst c
   M.EVec es -> buildJsListFromExprs sr es
-  M.EVar uid -> pure $ uidToText uid
+  M.EVar uid nameMaybe -> pure $ uidToText uid <> maybe "" (\n -> " /* " <> n <> " */") nameMaybe
   M.EGlobal fqn -> do
     vDef <- getVDef fqn
     let fqn' = filterFqn $ un fqn

@@ -61,7 +61,7 @@ data Const = CInt Integer | CI32 Int32 | CFloat Text | CBool Bool | CString Text
   deriving (Show, Eq, Generic, Hashable)
 
 data Fn = Fn
-  { params :: [(LocalVarUid, Maybe VName, Type, SrcRange)],
+  { params :: [(LocalVarUid, Maybe TextL, Type, SrcRange)],
     ret :: Type,
     expr :: Expr,
     effects :: Effects,
@@ -89,7 +89,7 @@ data VDef = VDef
 data Expr'
   = ELoadConst Const
   | EVec [Expr]
-  | EVar LocalVarUid
+  | EVar LocalVarUid (Maybe Text)
   | EGlobal VFqn
   | EClosure Fn
   | EFnCall Expr [Expr] IsAsync Type

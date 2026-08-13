@@ -111,7 +111,7 @@ constFoldInlineExpr :: forall m. (MonadOpt m) => VarMap -> M.Expr -> m (M.Expr, 
 constFoldInlineExpr startingVars exprToOpt = do
   let go :: VarMap -> M.Expr -> m (M.Expr, Maybe KnownValue)
       go vars expr@(expr', sr) = case expr' of
-        M.EVar uid ->
+        M.EVar uid _ ->
           -- Don't need to change the expression, loading a var is free
           pure (expr, lookup uid vars)
         M.ELoadConst x -> pure (expr, Just $ KnownConst x)
@@ -173,7 +173,7 @@ constFoldInlineExpr startingVars exprToOpt = do
                       -- Create id map for renaming parameters and (id, expr) for storing parameters in variables
                       -- Var expressions just get mapped directly to the local variable
                       newUids <- forM (zip fn.params ps') $ \((uid, _, _, _), (e, _)) -> case fst e of
-                        M.EVar uid' ->
+                        M.EVar uid' _ ->
                           pure ((uid, uid'), Nothing)
                         _ -> do
                           uid' <- generateNewUid
@@ -347,9 +347,9 @@ renameExpr :: forall m. (MonadOpt m) => UidMap -> M.Expr -> m M.Expr
 renameExpr startingUidMap exprToRename = do
   let go :: UidMap -> M.Expr -> m M.Expr
       go uidMap expr@(expr', sr) = case expr' of
-        M.EVar uid -> do
+        M.EVar uid n -> do
           let uid' = fromMaybe uid $ lookup uid uidMap
-          pure (M.EVar uid', sr)
+          pure (M.EVar uid' n, sr)
         M.ELoadConst {} -> pure expr
         M.EVec xs -> do
           xs' <- forM xs $ go uidMap

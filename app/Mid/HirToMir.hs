@@ -88,7 +88,7 @@ toMir' = do
           let type' = M.TFunc ps t (M.Effects True True) False
           let pNames = [0 .. length xs - 1] <&> M.LocalVarUid
           let params = zip pNames ps <&> \(uid, t') -> (uid, Nothing, t', sr)
-          let getters = pNames <&> \uid -> (M.EVar uid, sr)
+          let getters = pNames <&> \uid -> (M.EVar uid Nothing, sr)
           let e = mkDataConsInit ps getters dcIdx sr
           let fn = M.Fn params t e (M.Effects True True) vFqn False
           let nextUid = length xs
@@ -229,17 +229,19 @@ cvtClosure cloType cloArgs e'@(_, bodyType, _) sr = do
   setIsAsync async
 
   -- Convert closure arguments to parameter variables
-  -- TODO If a destructure is DName then don't create redundant variable declarations
-  params <- forM cloArgs $ \(_, t, sr') -> do
+  destructureStmtsAndParams <- forM cloArgs $ \arg@(d, t, sr') -> do
     t' <- cvtType t
-    uid <- mkLocalVarUid
-    pure (uid, Nothing, t', sr')
+    case d of
+      H.DName n uid _ ->
+        pure ([], ((M.LocalVarUid $ un uid), Just (un n, sr'), t', sr'))
+      _ -> do
+        uid <- mkLocalVarUid
+        ss <- mkDestructureStmts arg (M.EVar uid Nothing, sr')
+        pure (ss, (uid, Nothing, t', sr'))
 
   -- Convert body expression & return type
   expr' <- cvtExpr e'
-  let paramUids = params <&> \(x, _, _, sr') -> (M.EVar x, sr')
-  destructureStmts <- forM (zip cloArgs paramUids) $ uncurry mkDestructureStmts
-  let expr = (M.EDoBlock (concat destructureStmts) $ Just expr', sr)
+  let expr = (M.EDoBlock (concatMap fst destructureStmtsAndParams) $ Just expr', sr)
   ret <- cvtType bodyType
 
   -- Restore previous async state
@@ -257,7 +259,7 @@ cvtClosure cloType cloArgs e'@(_, bodyType, _) sr = do
 
   -- Create Mir function
   fqn <- getVFqn
-  let fn = M.Fn {params, ret, expr, effects, fqn, isAsync = async}
+  let fn = M.Fn {params = snd <$> destructureStmtsAndParams, ret, expr, effects, fqn, isAsync = async}
   pure (M.EClosure fn, sr)
 
 unreachableType :: H.Type
@@ -288,7 +290,7 @@ gatherTraitWhereData sr ((traitFqn, _), chosenTrait) = do
   case chosenTrait of
     H.FromWhereClause loc -> do
       whUid <- getWhereParamUid loc.src
-      let getVarExpr = (M.EVar $ must whUid, sr)
+      let getVarExpr = (M.EVar (must whUid) Nothing, sr)
       let indexed1 =
             if loc.whereClausesTotal <= 1
               then
@@ -355,8 +357,8 @@ cvtExpr (e, t, sr) = do
     H.ELitList xs -> do
       xs' <- forM xs cvtExpr
       pure $ M.EVec xs'
-    H.EVar id -> do
-      pure $ M.EVar $ M.LocalVarUid $ un id
+    H.EVar id n -> do
+      pure $ M.EVar (M.LocalVarUid $ un id) (Just n)
     H.EGlobal {}
       | t == unreachableType ->
           pure $ M.EUnreachable ""
@@ -383,7 +385,7 @@ cvtExpr (e, t, sr) = do
           pure $ fst e2
     H.EWheresGet {traitLoc, fnIdx, nextWhereClauses} -> do
       whUid <- getWhereParamUid traitLoc.src
-      let getVarExpr = (M.EVar $ must whUid, sr)
+      let getVarExpr = (M.EVar (must whUid) Nothing, sr)
           indexed1 =
             if traitLoc.whereClausesTotal <= 1
               then
@@ -447,7 +449,7 @@ cvtExpr (e, t, sr) = do
     H.EMatch matchExpr bs -> do
       -- Store match expression in a variable so it isn't repeated in each if expression
       uid <- mkLocalVarUid
-      let scrutineeVar = (M.EVar uid, sr)
+      let scrutineeVar = (M.EVar uid Nothing, sr)
       matchExpr' <- cvtExpr matchExpr
       let letStmt = (M.SLet uid Nothing False matchExpr', snd matchExpr')
 
@@ -493,7 +495,7 @@ cvtExpr (e, t, sr) = do
         pure (M.SExpr outerIf, sr)
 
       let noMatch = (M.SExpr (M.EUnreachable "Unhandled pattern", sr), sr)
-      let resultVar = (M.EVar resultUid, sr)
+      let resultVar = (M.EVar resultUid Nothing, sr)
       let loop = (M.SLoop (M.EDoBlock ([letStmt] <> ifs <> [noMatch]) Nothing, sr) lbl, sr)
       pure (M.EDoBlock [resultStmt, loop] (Just resultVar))
     H.EDataCons (H.DataConsInfo {fqn, dcName, dcIdx, isFn}) -> do
@@ -512,7 +514,7 @@ cvtExpr (e, t, sr) = do
         let typeStr = typeToTextFull exceptionType
         uid' <- mkLocalVarUid
         bodyExpr' <- cvtExpr bodyExpr
-        destructStmts <- mkDestructureStmts destr (M.EVar uid', sr)
+        destructStmts <- mkDestructureStmts destr (M.EVar uid' Nothing, sr)
         let expr = (M.EDoBlock destructStmts (Just bodyExpr'), sr)
         pure (typeStr, uid', thd3 destr, expr)
       finallyExpr' <- forM finallyExpr cvtExpr
@@ -545,7 +547,7 @@ cvtExpr (e, t, sr) = do
             fieldOrder <&> \field -> case lookup field $ toList fieldExprIndices of
               Just i -> fst $ exprUids !! i
               Nothing -> error "Field not found in record init"
-      let varExprs = sortedUids <&> \uid -> (M.EVar uid, sr)
+      let varExprs = sortedUids <&> \uid -> (M.EVar uid Nothing, sr)
       dConssTypes <- getDataConstructorTypes dataTypeDef
       let recordExpr = mkDataConsInit dConssTypes varExprs dcInfo.dcIdx sr
       let letStmts = exprUids <&> \(uid, expr') -> (M.SLet uid Nothing False expr', snd expr')
@@ -560,7 +562,7 @@ cvtExpr (e, t, sr) = do
       updateVarUids <- forM updateExprs' $ const mkLocalVarUid
       let updateLetStmts =
             zip updateVarUids updateExprs' <&> \(uid, expr'') -> (M.SLet uid Nothing False expr'', sr)
-      let updateVarExprs = updateVarUids <&> \uid -> (M.EVar uid, sr)
+      let updateVarExprs = updateVarUids <&> \uid -> (M.EVar uid Nothing, sr)
       updatePartExpr <- cvtUpdatePart expr' updateVarExprs updatePart
       pure $ M.EDoBlock updateLetStmts (Just updatePartExpr)
     H.EAddFnEffects expr -> do
@@ -673,10 +675,14 @@ cvtStmt :: (MonadToMir m) => H.Stmt -> m [M.Stmt]
 cvtStmt (stmt, sr) = case stmt of
   H.SLet d expr -> do
     expr' <- cvtExpr expr
-    uid <- mkLocalVarUid
-    let letStmt = (M.SLet uid Nothing False expr', sr)
-    destrStmts <- mkDestructureStmts d (M.EVar uid, sr)
-    pure $ letStmt : destrStmts
+    case fst3 d of
+      H.DName n uid m ->
+        pure [(M.SLet (M.LocalVarUid $ un uid) (Just (un n, sr)) m expr', sr)]
+      _ -> do
+        uid <- mkLocalVarUid
+        let letStmt = (M.SLet uid Nothing False expr', sr)
+        destrStmts <- mkDestructureStmts d (M.EVar uid Nothing, sr)
+        pure $ letStmt : destrStmts
   H.SRecLet name hirUid (expr, t, _) -> do
     case expr of
       H.EClosure params e' -> do
@@ -702,7 +708,7 @@ cvtStmt (stmt, sr) = case stmt of
   H.SForEach {destr, inExpr, bodyExpr, label} -> do
     -- Create temporary mutable variable for the iterator
     uid' <- mkLocalVarUid
-    let iteratorVar = (M.EVar uid', sr)
+    let iteratorVar = (M.EVar uid' Nothing, sr)
 
     -- Convert the iterator expression
     inExpr' <- cvtExpr inExpr

@@ -159,7 +159,7 @@ visitEVar ctx typeHint (theExpr, sr) = case theExpr of
     case findLocalVarByName ctx name of
       Just v -> do
         unless (null genArgs) $ throw sr "Local variables cannot be generic"
-        pure ((H.EVar v.uid, v.typ, sr), def)
+        pure ((H.EVar v.uid (un name), v.typ, sr), def)
       Nothing -> do
         -- Global variable
         (fqn, vDef) <- lookupGlobalVDef ctx name sr
@@ -221,7 +221,7 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
       A.EVar name [] -> do
         case findLocalVarByName ctx name of
           Just v -> do
-            pure $ Left ((H.EVar v.uid, v.typ, sr), def)
+            pure $ Left ((H.EVar v.uid (un name), v.typ, sr), def)
           _ -> do
             -- Global variable
             (fqn, vDef) <- lookupGlobalVDef ctx name sr

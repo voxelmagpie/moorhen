@@ -203,7 +203,7 @@ data Expr'
   | ELitBool Bool
   | ELitString Text
   | ELitList [Expr]
-  | EVar LocalVarUid
+  | EVar LocalVarUid Text
   | EGlobal VFqn [Type] IsGenericOverEffectType WhereClauseTraits
   | EWheresGet
       { traitLoc :: WhereTraitLoc,
