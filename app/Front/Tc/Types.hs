@@ -266,8 +266,8 @@ verifyEffectAndConvertToList t = case t of
     pure $ if tDef.typeKind == EffectType then Just [t] else Nothing
   _ -> pure Nothing
 
-getTDef2 :: (MonadTc m, HasCallStack) => Ctx -> SrcRange -> H.Type -> m (H.DataTypeDef, (TFqn, [H.Type]))
-getTDef2 ctx sr t = case t of
+getDataDefType :: (MonadTc m, HasCallStack) => Ctx -> SrcRange -> H.Type -> m (H.DataTypeDef, (TFqn, [H.Type]))
+getDataDefType ctx sr t = case t of
   H.TNamed fqn genArgs -> do
     let pkg = tFqnToPkg fqn
     -- Look up the type definition
@@ -297,7 +297,7 @@ findDConsInType (name, nameSr) dataTypeDef =
 
 getDataConsFromType :: (MonadTc m) => Ctx -> H.Type -> TNameL -> m (H.DataConsInfo, H.Type, H.Fields)
 getDataConsFromType ctx t name@(_, nameSr) = do
-  (dataTypeDef, (_, genArgs')) <- getTDef2 ctx nameSr t
+  (dataTypeDef, (_, genArgs')) <- getDataDefType ctx nameSr t
   (H.DataCons _ dcContents, dcIdx) <- findDConsInType name dataTypeDef
   let gpMap = zip dataTypeDef.t1.genParams genArgs' <&> \(gp, a) -> (gp.fqn, a)
   let tFqn = dataTypeDef.t1.fqn

@@ -412,7 +412,7 @@ cvtExpr (e, t, sr) = do
     H.EFnCall (H.CalleeExpr (H.EDataCons (H.DataConsInfo {dcIdx}), calleeType, _)) args -> do
       args' <- forM args cvtExpr
       let t' = case calleeType of H.TFunc _ r _ -> r; _ -> undefined
-      dataTypeDef <- getTNamedTDef2 t'
+      dataTypeDef <- getDataTypeDefFromTNamed t'
       dConssTypes <- getDataConstructorTypes dataTypeDef
       pure $ fst $ mkDataConsInit dConssTypes args' dcIdx sr
     H.EFnCall (H.CalleeExpr callee) args -> do
@@ -522,7 +522,7 @@ cvtExpr (e, t, sr) = do
           let fqn' = VFqn $ T.concat ["_", un fqn, "_", un dcName]
           pure $ M.EGlobal fqn'
         else do
-          dataTypeDef <- getTNamedTDef2 t
+          dataTypeDef <- getDataTypeDefFromTNamed t
           dConssTypes <- getDataConstructorTypes dataTypeDef
           pure $ fst $ mkDataConsInit dConssTypes [] dcIdx sr
     H.ETry tryExpr catchClauses finallyExpr -> do
@@ -545,7 +545,7 @@ cvtExpr (e, t, sr) = do
       pure $ M.EIndex expr' idx Nothing
     H.EFieldAccess expr@(_, fieldType, _) (fieldName, _) -> do
       expr' <- cvtExpr expr
-      dataTypeDef <- getTNamedTDef2 fieldType
+      dataTypeDef <- getDataTypeDefFromTNamed fieldType
       let (H.DataCons _ fields) = dataTypeDef.dataCons !! 0
       let fieldIdx = case fields of
             H.TupleFields _ -> error "TupleFields in EFieldAccess"
@@ -556,7 +556,7 @@ cvtExpr (e, t, sr) = do
         expr' <- cvtExpr expr
         uid <- mkLocalVarUid
         pure (uid, expr')
-      dataTypeDef <- getTNamedTDef2 t
+      dataTypeDef <- getDataTypeDefFromTNamed t
       let (H.DataCons _ fields) = toList dataTypeDef.dataCons !! dcInfo.dcIdx
       let fieldOrder = case fields of
             H.TupleFields _ -> error "TupleFields in ERecordInit"
@@ -783,12 +783,12 @@ cvtStmt (stmt, sr) = case stmt of
 
     pure [initStmt, loopStmt]
 
-getTNamedTDef2 :: (MonadToMir m, HasCallStack) => H.Type -> m H.DataTypeDef
-getTNamedTDef2 (H.TNamed fqn _) = do
+getDataTypeDefFromTNamed :: (MonadToMir m, HasCallStack) => H.Type -> m H.DataTypeDef
+getDataTypeDefFromTNamed (H.TNamed fqn _) = do
   let pkg = tFqnToPkg fqn
   pkg' <- getPkg pkg
   getDataTypeDef pkg' fqn
-getTNamedTDef2 t = error $ "getTNamedTDef2 not TNamed: " <> show t
+getDataTypeDefFromTNamed t = error $ "getDataTypeDefFromTNamed not TNamed: " <> show t
 
 effectCouldContainAsync :: (MonadToMir m) => H.Type -> m IsAsync
 effectCouldContainAsync (H.TNamed (TFqn "#builtins/:AsyncEffect") _) = pure IsAsync
