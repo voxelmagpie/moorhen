@@ -762,7 +762,7 @@ visitEIndex ctx _ (theExpr, sr) = case theExpr of
     ts <- case t of
       H.TTuple ts -> pure $ toList ts
       H.TNamed {} -> do
-        (dataTypeDef, (_, genArgs)) <- getDataDefType ctx (snd e) t
+        (dataTypeDef, (_, genArgs)) <- getDataDefType ctx.tcIn (snd e) t
         case dataTypeDef.dataCons of
           List1 (H.DataCons _ (H.TupleFields ts)) [] -> do
             let gpMap = zip (dataTypeDef.t1.genParams <&> (.fqn)) genArgs
@@ -777,7 +777,7 @@ visitEFieldAccess :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Exp
 visitEFieldAccess ctx _ (theExpr, sr) = case theExpr of
   A.EFieldAccess e fieldName -> do
     (e'@(_, recordType, _), eff) <- visitExpr ctx TUnknown e
-    (dataTypeDef, (_, genArgs)) <- getDataDefType ctx (snd e) recordType
+    (dataTypeDef, (_, genArgs)) <- getDataDefType ctx.tcIn (snd e) recordType
     fields <- case dataTypeDef.dataCons of
       List1 (H.DataCons _ (H.RecordFields fs)) [] -> do
         let gpMap = zip (dataTypeDef.t1.genParams <&> (.fqn)) genArgs
@@ -888,7 +888,7 @@ visitEUpdate ctx _ (theExpr, sr) = case theExpr of
                   then
                     pure H.EUpdateNoChange
                   else do
-                    (dataTypeDef, _) <- getDataDefType ctx sr t
+                    (dataTypeDef, _) <- getDataDefType ctx.tcIn sr t
                     let gpMap = zip (dataTypeDef.t1.genParams <&> (.fqn)) genArgs
                     case dataTypeDef.dataCons of
                       List1 (H.DataCons _ (H.TupleFields [])) _ ->
@@ -954,7 +954,7 @@ visitEAs ctx _ (theExpr, sr) = case theExpr of
         tDef <- getTDef sr actType
         if tDef.tDefType /= H.IsBuiltin
           then do
-            (dataTypeDef, _) <- getDataDefType ctx sr actType
+            (dataTypeDef, _) <- getDataDefType ctx.tcIn sr actType
             if dataTypeDef.isEnumType
               then do
                 pure (H.ECastNumber e', toType, sr)

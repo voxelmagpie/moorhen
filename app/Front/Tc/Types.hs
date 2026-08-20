@@ -266,8 +266,8 @@ verifyEffectAndConvertToList t = case t of
     pure $ if tDef.typeKind == EffectType then Just [t] else Nothing
   _ -> pure Nothing
 
-getDataDefType :: (MonadTc m, HasCallStack) => Ctx -> SrcRange -> H.Type -> m (H.DataTypeDef, (TFqn, [H.Type]))
-getDataDefType ctx sr t = case t of
+getDataDefType :: (MonadTc m, HasCallStack) => Inputs -> SrcRange -> H.Type -> m (H.DataTypeDef, (TFqn, [H.Type]))
+getDataDefType tcIn sr t = case t of
   H.TNamed fqn genArgs -> do
     let pkg = tFqnToPkg fqn
     -- Look up the type definition
@@ -280,8 +280,8 @@ getDataDefType ctx sr t = case t of
       if thisPkg == pkg
         then do
           let ns = tFqnToNamespace fqn
-          let astAndImports@(ast, _) = must $ HM.lookup ns ctx.tcIn.allAsts
-          let ctx' = mkFileCtx ns astAndImports ctx.tcIn
+          let astAndImports@(ast, _) = must $ HM.lookup ns tcIn.allAsts
+          let ctx' = mkFileCtx ns astAndImports tcIn
           let astTDef = must $ HM.lookup (fst tDef.name) ast.tDefs
           visitDataTypeDef ctx' astTDef <&> snd
         else
@@ -297,7 +297,7 @@ findDConsInType (name, nameSr) dataTypeDef =
 
 getDataConsFromType :: (MonadTc m) => Ctx -> H.Type -> TNameL -> m (H.DataConsInfo, H.Type, H.Fields)
 getDataConsFromType ctx t name@(_, nameSr) = do
-  (dataTypeDef, (_, genArgs')) <- getDataDefType ctx nameSr t
+  (dataTypeDef, (_, genArgs')) <- getDataDefType ctx.tcIn nameSr t
   (H.DataCons _ dcContents, dcIdx) <- findDConsInType name dataTypeDef
   let gpMap = zip dataTypeDef.t1.genParams genArgs' <&> \(gp, a) -> (gp.fqn, a)
   let tFqn = dataTypeDef.t1.fqn
@@ -372,3 +372,19 @@ getDataCons ctx hint name@(_, nameSr) astGenArgs = do
     let isProduct = length dataTypeDef.dataCons == 1
     let isFn = case dcContents of H.TupleFields xs -> notNull xs; H.RecordFields {} -> False
     pure (H.DataConsInfo tFqn (fst name) dcIdx isFn isProduct dataTypeDef.isEnumType, t, dcFieldTypes)
+
+-- Returns empty list if this is not a record product type
+getFieldsFromType :: (MonadTc m) => Inputs -> H.Type -> m [VName]
+getFieldsFromType tcIn selfType = case selfType of
+  H.TNamed fqn _ -> do
+    pkg <- getDepOrThisPkg $ tFqnToPkg fqn
+    tDef <- getTDefMaybe pkg fqn <&> must
+    case tDef.tDefType of
+      H.IsDataDef -> do
+        (dataTypeDef, _) <- getDataDefType tcIn def selfType
+        case dataTypeDef.dataCons of
+          List1 (H.DataCons _ (H.RecordFields fields)) [] -> do
+            pure $ toList fields <&> fst
+          _ -> pure []
+      _ -> pure []
+  _ -> pure []

@@ -147,7 +147,15 @@ typeCheckPackage' = do
         A.Module _ vDefs _ _ -> do
           (_, selfType, _, modCtx, _, _, wh) <- visitBlockDecl outerCtx tDef
 
+          fields <- getFieldsFromType i selfType
+
           forM_ (toList vDefs.nameMap) $ \(_, astVDef) -> do
+            when (fst astVDef.name `elem` fields)
+              $ throw astVDef.name
+              $ "Module member '"
+              <> un (fst astVDef.name)
+              <> "' has name name as field"
+
             (vFqn, vDef) <- visitVDef modCtx astVDef wh
 
             case vDef.type' of

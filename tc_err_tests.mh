@@ -317,3 +317,10 @@ mod Foo for Int
 	let x : Int = 3
 
 let f : Foo = undefined
+
+// --- //
+
+data X { a : Int }
+
+mod M for X
+	let a (self : X) : Int -> 1

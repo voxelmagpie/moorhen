@@ -88,7 +88,7 @@ visitDestructure ctxVar t (destr, sr) = case destr of
       pure (H.DTuple ds', t, sr)
     _ -> do
       ctx <- getVar ctxVar
-      (dataTypeDef, (tFqn, genArgs)) <- getDataDefType ctx sr t
+      (dataTypeDef, (tFqn, genArgs)) <- getDataDefType ctx.tcIn sr t
       (name, ts) <- case dataTypeDef.dataCons of
         List1 (H.DataCons (name, _) (H.TupleFields xs)) []
           | notNull xs -> do
@@ -101,7 +101,7 @@ visitDestructure ctxVar t (destr, sr) = case destr of
       pure (H.DDataCons dCons ds', t, sr)
   A.DRecord fields -> do
     ctx <- getVar ctxVar
-    (dataTypeDef, (tFqn, genArgs)) <- getDataDefType ctx sr t
+    (dataTypeDef, (tFqn, genArgs)) <- getDataDefType ctx.tcIn sr t
     (dConsName, dConsFields) <- case dataTypeDef.dataCons of
       List1 (H.DataCons (name, _) (H.RecordFields xs)) [] -> do
         let gpMap = zip dataTypeDef.t1.genParams genArgs <&> first (.fqn)
