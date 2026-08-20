@@ -196,6 +196,11 @@ data WhereClauseTraits = WhereClauseTraits
   }
   deriving (Show, Generic, Eq, Default)
 
+data CalleeExpr
+  = CalleeExpr Expr
+  | TraitTypeCalleeExpr {fnType :: Type, traitDefIndex :: Int, traitDefsTotal :: Int} -- callee is in first arg
+  deriving (Show, Generic, Eq)
+
 data Expr'
   = ELitInt Int64
   | ELitInt32 Int
@@ -211,7 +216,7 @@ data Expr'
         nextWhereClauses :: WhereClauseTraitsList -- For generic trait functions
       }
   | EClosure [Destructure] Expr
-  | EFnCall Expr [Expr]
+  | EFnCall CalleeExpr [Expr]
   | EDoBlock [Stmt] (Maybe Expr)
   | EIf Expr Expr Expr
   | ETuple (List2 Expr)

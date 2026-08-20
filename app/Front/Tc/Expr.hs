@@ -5,8 +5,9 @@
 
 module Front.Tc.Expr where
 
-import Control.Monad (forM, forM_, unless)
+import Control.Monad (forM, forM_, unless, when)
 import Data.Either (isLeft)
+import Data.HashMap.Strict qualified as HM
 import Data.HashSet qualified as HS
 import Data.List (findIndex)
 import Data.Maybe (catMaybes, fromMaybe, isNothing, mapMaybe)
@@ -14,7 +15,7 @@ import Data.Text qualified as T
 import Error (ErrorSeverity (SevWarning))
 import Front.Ast qualified as A
 import Front.Hir qualified as H
-import Front.HirFns (isGenericOverEffect, typeToText)
+import Front.HirFns (isGenericOverEffect, typeContainsFqn, typeToText)
 import Front.Tc.Context
 import Front.Tc.Error (MonadTcError (addError, throw))
 import Front.Tc.Generics
@@ -300,7 +301,7 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
 
     assertM $ flip all effs' $ \case H.TNamed {} -> True; _ -> False
 
-    pure ((H.EFnCall (fst calleeExpr) (fst <$> argsExprs'), retType, sr), effs')
+    pure ((H.EFnCall (H.CalleeExpr $ fst calleeExpr) (fst <$> argsExprs'), retType, sr), effs')
   _ -> undefined
 
 visitEDoBlock :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
@@ -415,6 +416,19 @@ visitEDataCons ctx typeHint (theExpr, sr) = case theExpr of
     pure (e, def)
   _ -> undefined
 
+data VisitMembCallLookupResult = VisitMembCallLookupResult
+  { fqn :: VFqn,
+    vDefType :: H.Type,
+    vDefGenParams :: [H.GenParam],
+    modParams :: [H.GenParam],
+    modArgs :: [H.Type],
+    modWhs :: H.WhereClauseTraitsList,
+    vDefWhereClauses :: H.WhereClauses,
+    whereClauseIdxMaybe :: Maybe H.WhereTraitLoc,
+    fnIdx :: Int,
+    fromTraitTypeMaybe :: Maybe (H.Trait, H.TraitVDef)
+  }
+
 visitEMemberCall :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
 visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
   A.EMemberCall astLhsExpr name astExtraArgsExprs -> do
@@ -423,154 +437,262 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
     foundWithWrongNumParams <- newVar False
     let expectedParamsCount = 1 + length astExtraArgsExprs
 
-    lookupResults'' <- lookupMembVName ctx name
-    whLookupResults <- lookupMembVNameInCtxWhere ctx (snd3 lhs) (fst name)
+    fromModules <-
+      lookupMembVName ctx name >>= \xs -> forM xs $ \case
+        NlMembAstValDef outerCtx _ blkTDef astVDef _ -> do
+          (gps, forType, _blkFqn, moduleCtx, _, _, wh) <- visitBlockDecl outerCtx blkTDef
 
-    let lookupResults = (Left <$> lookupResults'') <> (Right <$> whLookupResults)
+          modArgsMaybe <- tryInferGenericArgs [] gps (typeToPType $ snd3 lhs) forType (thd3 lhs)
+          case modArgsMaybe of
+            Right modArgs -> do
+              (fqn, vDef) <- visitVDef moduleCtx astVDef wh
+              case vDef.type' of
+                H.TFunc ps _ _
+                  | isLeft (fst name) || length ps == expectedParamsCount -> do
+                      let gpMap = zip (gps <&> (.fqn)) modArgs
+                      modWhs <- findTraitImpls ctx gpMap wh (thd3 lhs)
+                      pure
+                        $ Just
+                          VisitMembCallLookupResult
+                            { fqn,
+                              vDefType = vDef.type',
+                              vDefGenParams = drop (length gps) vDef.genParams,
+                              modParams = gps,
+                              modArgs,
+                              modWhs,
+                              vDefWhereClauses = vDef.whereClauses,
+                              whereClauseIdxMaybe = Nothing,
+                              fnIdx = -1,
+                              fromTraitTypeMaybe = Nothing
+                            }
+                H.TFunc {} -> do
+                  setVar foundWithWrongNumParams True
+                  pure Nothing
+                _ -> pure Nothing
+            _ ->
+              pure Nothing
+        NlMembValDef pkgName blk vFqn -> do
+          modArgsMaybe <-
+            tryInferGenericArgs [] blk.genParams (typeToPType $ snd3 lhs) blk.forType (thd3 lhs)
+          case modArgsMaybe of
+            Right modArgs -> do
+              pkg <- getDepPkg pkgName
+              vDef <- getVDefMaybe pkg vFqn <&> must
+              case vDef.type' of
+                H.TFunc ps _ _
+                  | isLeft (fst name) || length ps == expectedParamsCount -> do
+                      let gpMap = zip (blk.genParams <&> (.fqn)) modArgs
+                      modWhs <- findTraitImpls ctx gpMap blk.whereClauses (thd3 lhs)
+                      pure
+                        $ Just
+                          VisitMembCallLookupResult
+                            { fqn = vFqn,
+                              vDefType = vDef.type',
+                              vDefGenParams = drop (length blk.genParams) vDef.genParams,
+                              modParams = blk.genParams,
+                              modArgs,
+                              modWhs,
+                              vDefWhereClauses = vDef.whereClauses,
+                              whereClauseIdxMaybe = Nothing,
+                              fnIdx = -1,
+                              fromTraitTypeMaybe = Nothing
+                            }
+                H.TFunc {} -> do
+                  setVar foundWithWrongNumParams True
+                  pure Nothing
+                _ -> pure Nothing
+            _ ->
+              pure Nothing
 
-    lookupResults' <- forM lookupResults $ \case
-      Left (NlMembAstValDef outerCtx _ blkTDef astVDef _) -> do
-        (gps, forType, _blkFqn, moduleCtx, _, _, wh) <- visitBlockDecl outerCtx blkTDef
-
-        modArgsMaybe <- tryInferGenericArgs [] gps (typeToPType $ snd3 lhs) forType (thd3 lhs)
-        case modArgsMaybe of
-          Right modArgs -> do
-            (fqn, vDef) <- visitVDef moduleCtx astVDef wh
-            case vDef.type' of
-              H.TFunc ps _ _
-                | isLeft (fst name) || length ps == expectedParamsCount -> do
-                    let gpMap = zip (gps <&> (.fqn)) modArgs
-                    whs <- findTraitImpls ctx gpMap wh (thd3 lhs)
-                    let vDefGP = drop (length gps) vDef.genParams
-                    pure $ Just (fqn, vDef.type', vDefGP, gps, modArgs, whs, vDef.whereClauses, Nothing, -1)
-              H.TFunc {} -> do
-                setVar foundWithWrongNumParams True
-                pure Nothing
-              _ -> pure Nothing
-          _ ->
-            pure Nothing
-      Left (NlMembValDef pkgName blk vFqn) -> do
-        modArgsMaybe <-
-          tryInferGenericArgs [] blk.genParams (typeToPType $ snd3 lhs) blk.forType (thd3 lhs)
-        case modArgsMaybe of
-          Right modArgs -> do
-            pkg <- getDepPkg pkgName
-            vDef <- getVDefMaybe pkg vFqn <&> must
-            case vDef.type' of
-              H.TFunc ps _ _
-                | isLeft (fst name) || length ps == expectedParamsCount -> do
-                    let gpMap = zip (blk.genParams <&> (.fqn)) modArgs
-                    whs <- findTraitImpls ctx gpMap blk.whereClauses (thd3 lhs)
-                    let vDefGP = drop (length blk.genParams) vDef.genParams
-                    pure $ Just (vFqn, vDef.type', vDefGP, blk.genParams, modArgs, whs, vDef.whereClauses, Nothing, -1)
-              H.TFunc {} -> do
-                setVar foundWithWrongNumParams True
-                pure Nothing
-              _ -> pure Nothing
-          _ ->
-            pure Nothing
-      Right (traitLoc, trait, vDef) -> do
-        let ctxWhs = case traitLoc.src of H.FromBlockWheres -> ctx.blockWhereClauses; H.FromVDefWheres -> ctx.vDefWhereClauses
+    fromWhereClauses <-
+      lookupMembVNameInCtxWhere ctx (snd3 lhs) (fst name) >>= \xs -> forM xs $ \(traitLoc, trait, vDef) -> do
+        let ctxWhs = case traitLoc.src of
+              H.FromBlockWheres -> ctx.blockWhereClauses
+              H.FromVDefWheres -> ctx.vDefWhereClauses
         let (_, traits) = toList ctxWhs !! traitLoc.whereClauseIdx
         let (_, traitGenArgs) = traits !! traitLoc.whereClauseTraitIdx
-        let modGenArgs = snd3 lhs : traitGenArgs
         case vDef.vDef.type' of
           H.TFunc ps _ _ | isLeft (fst name) || length ps == expectedParamsCount -> do
             pure
               $ Just
-                ( vDef.vDef.fqn,
-                  vDef.vDef.type',
-                  vDef.genParams,
-                  trait.selfType : trait.genParams,
-                  modGenArgs,
-                  def,
-                  vDef.vDef.whereClauses,
-                  Just traitLoc,
-                  vDef.idx
-                )
+                VisitMembCallLookupResult
+                  { fqn = vDef.vDef.fqn,
+                    vDefType = vDef.vDef.type',
+                    vDefGenParams = vDef.genParams,
+                    modParams = trait.selfType : trait.genParams,
+                    modArgs = snd3 lhs : traitGenArgs,
+                    modWhs = def,
+                    vDefWhereClauses = vDef.vDef.whereClauses,
+                    whereClauseIdxMaybe = Just traitLoc,
+                    fnIdx = vDef.idx,
+                    fromTraitTypeMaybe = Nothing
+                  }
           H.TFunc {} -> do
             setVar foundWithWrongNumParams True
             pure Nothing
           _ -> pure Nothing
 
-    let getName = \case Left x -> un x; Right x -> un x
-    (fqn, vDefType, vDefGenParams, modParams, modArgs, modWhs, vDefWhereClauses, whereClauseIdxMaybe, fnIdx) <-
-      case catMaybes lookupResults' of
-        [] -> do
-          wrongParamsCount <- getVar foundWithWrongNumParams
-          throw name
-            $ "Member definition '"
-            <> getName (fst name)
-            <> "'"
-            <> (if wrongParamsCount then " with " <> tShow (1 + length astExtraArgsExprs) <> " parameters" else "")
-            <> " not found for type "
-            <> typeToText (snd3 lhs)
-        [x] -> pure x
-        _ -> throw name $ "Member name '" <> getName (fst name) <> "' is ambiguous"
+    -- Trait as existential type / 'dyn trait
+    fromTraitObject <- case snd3 lhs of
+      H.TNamed fqn traitGenArgs -> do
+        getTraitMaybe ctx.tcIn fqn <&> \case
+          Just trait -> do
+            let lookupName n = case HM.lookup n trait.names of
+                  Just vDef ->
+                    [ VisitMembCallLookupResult
+                        { fqn = vDef.vDef.fqn,
+                          vDefType = vDef.vDef.type',
+                          vDefGenParams = vDef.genParams,
+                          modParams = trait.selfType : trait.genParams,
+                          modArgs = snd3 lhs : traitGenArgs,
+                          modWhs = def,
+                          vDefWhereClauses = vDef.vDef.whereClauses,
+                          whereClauseIdxMaybe = Nothing,
+                          fnIdx = vDef.idx,
+                          fromTraitTypeMaybe = Just (trait, vDef)
+                        }
+                    ]
+                  _ -> []
+            case fst name of
+              Left n -> lookupName n
+              Right op ->
+                case HM.lookup op trait.ops of
+                  Just names ->
+                    concat $ toList names <&> lookupName
+                  _ -> []
+          _ -> []
+      _ -> pure []
 
-    calleeExprOrHint <-
-      let t = substituteGenerics (zip (modParams <&> (.fqn)) modArgs) vDefType
-       in if length vDefGenParams == 0
-            then do
-              let genOverEfs = isGenericOverEffect modParams
+    let getName = \case Left x -> un x; Right x -> un x
+    (calleeExpr, extraArgsExprs) <- case (catMaybes (fromModules <> fromWhereClauses) <> fromTraitObject) of
+      -- No results
+      [] -> do
+        wrongParamsCount <- getVar foundWithWrongNumParams
+        throw name
+          $ "Member definition '"
+          <> getName (fst name)
+          <> "'"
+          <> (if wrongParamsCount then " with " <> tShow (1 + length astExtraArgsExprs) <> " parameters" else "")
+          <> " not found for type "
+          <> typeToText (snd3 lhs)
+      -- Ambiguity
+      _ : _ : _ -> throw name $ "Member name '" <> getName (fst name) <> "' is ambiguous"
+      -- 1 result
+      [ VisitMembCallLookupResult
+          { fqn,
+            vDefType,
+            vDefGenParams,
+            modParams,
+            modArgs,
+            modWhs,
+            vDefWhereClauses,
+            whereClauseIdxMaybe,
+            fnIdx,
+            fromTraitTypeMaybe
+          }
+        ] -> do
+          calleeExprOrHint <- do
+            let t = substituteGenerics (zip (modParams <&> (.fqn)) modArgs) vDefType
+            if length vDefGenParams == 0
+              then do
+                let genOverEfs = isGenericOverEffect modParams
+                case whereClauseIdxMaybe of
+                  Just traitLoc -> do
+                    let x = H.EWheresGet {traitLoc, fnIdx, nextWhereClauses = def}
+                    pure $ Left $ H.CalleeExpr (x, t, sr)
+                  _ -> case fromTraitTypeMaybe of
+                    Just (trait, traitVDef) -> do
+                      pure
+                        $ Left
+                        $ H.TraitTypeCalleeExpr
+                          { fnType = vDefType,
+                            traitDefIndex = traitVDef.idx,
+                            traitDefsTotal = length trait.vDefs
+                          }
+                    _ -> do
+                      let wh = H.WhereClauseTraits {mod = modWhs, vDef = def}
+                      pure $ Left $ H.CalleeExpr (H.EGlobal fqn modArgs genOverEfs wh, t, sr)
+              else do
+                let paramHints = typeToPType (snd3 lhs) : replicate (length astExtraArgsExprs) TUnknown
+                let ignore = modParams <&> (.fqn)
+                gpHints <- inferGenericArgsHints ignore vDefGenParams (TFuncP paramHints typeHint TUnknown) vDefType sr
+                let gpMap = zip (vDefGenParams <&> (.fqn)) gpHints
+                pure $ Right $ genericTypeToPType gpMap t
+
+          let calleeTypeOrHint = case calleeExprOrHint of
+                Left (H.CalleeExpr (_, t, _)) -> Left t
+                Left (H.TraitTypeCalleeExpr {fnType}) -> Left fnType
+                Right x -> Right x
+
+          case calleeTypeOrHint of
+            Left (H.TFunc ps _ _) ->
+              unless (length ps == 1 + length astExtraArgsExprs)
+                $ throw (srcRangeOf name astExtraArgsExprs) "Wrong number of arguments to member function"
+            -- Will be checked later
+            _ -> pure ()
+
+          let extraParamsHints =
+                let x = case calleeTypeOrHint of
+                      Left (H.TFunc ps _ _) -> typeToPType <$> tail ps
+                      Right (TFuncP ps _ _) -> tail ps
+                      _ -> []
+                 in x <> replicate (max 0 $ length astExtraArgsExprs - length x) TUnknown
+
+          extraArgsExprs <- forM (zip astExtraArgsExprs extraParamsHints) $ \(e, h) -> visitExpr ctx h e
+          calleeExpr <- case calleeExprOrHint of
+            Left e -> pure e
+            Right _ -> do
+              let extraParamsHints' = extraArgsExprs <&> (fst >>> snd3 >>> typeToPType)
+              let pType = TFuncP (typeToPType (snd3 lhs) : extraParamsHints') typeHint TUnknown
+              let modParams' = modParams <&> (.fqn)
+              genArgs <- inferGenericArgs modParams' vDefGenParams pType vDefType (thd3 lhs)
+              let gps' = vDefGenParams <&> (.fqn)
+              let gpMap = zip modParams' modArgs <> zip gps' genArgs
+              let t = substituteGenerics gpMap vDefType
+              let genOverEfs = isGenericOverEffect modParams || isGenericOverEffect vDefGenParams
+              whs <- findTraitImpls ctx gpMap vDefWhereClauses (thd3 lhs)
               case whereClauseIdxMaybe of
                 Just traitLoc -> do
-                  let x = H.EWheresGet {traitLoc, fnIdx, nextWhereClauses = def}
-                  pure $ Left (x, t, sr)
-                _ -> do
-                  let wh = H.WhereClauseTraits {mod = modWhs, vDef = def}
-                  pure $ Left (H.EGlobal fqn modArgs genOverEfs wh, t, sr)
-            else do
-              let paramHints = typeToPType (snd3 lhs) : replicate (length astExtraArgsExprs) TUnknown
-              let ignore = modParams <&> (.fqn)
-              gpHints <- inferGenericArgsHints ignore vDefGenParams (TFuncP paramHints typeHint TUnknown) vDefType sr
-              let gpMap = zip (vDefGenParams <&> (.fqn)) gpHints
-              pure $ Right $ genericTypeToPType gpMap t
+                  let x = H.EWheresGet {traitLoc, fnIdx, nextWhereClauses = whs}
+                  pure $ H.CalleeExpr (x, t, sr)
+                _ -> case fromTraitTypeMaybe of
+                  Just (trait, traitVDef) -> do
+                    pure
+                      $ H.TraitTypeCalleeExpr
+                        { fnType = t,
+                          traitDefIndex = traitVDef.idx,
+                          traitDefsTotal = length trait.vDefs
+                        }
+                  _ -> do
+                    let whs' = H.WhereClauseTraits {mod = modWhs, vDef = whs}
+                    pure $ H.CalleeExpr (H.EGlobal fqn (modArgs <> genArgs) genOverEfs whs', t, sr)
 
-    case calleeExprOrHint of
-      Left (_, H.TFunc ps _ _, _) ->
-        unless (length ps == 1 + length astExtraArgsExprs)
-          $ throw (srcRangeOf name astExtraArgsExprs) "Wrong number of arguments to member function"
-      -- Will be checked later
-      _ -> pure ()
+          case fromTraitTypeMaybe of
+            Just (trait, vDef) -> do
+              case vDef.vDef.type' of
+                H.TFunc (_ : ps) r ef -> do
+                  let hasSelfInWrongPlace =
+                        any (`typeContainsFqn` trait.fqn) ps
+                          || typeContainsFqn r trait.fqn
+                          || typeContainsFqn ef trait.fqn
+                  when hasSelfInWrongPlace
+                    $ throw sr
+                    $ "Function is not usable through a trait type as "
+                    <> "it uses the Self type in a place other than the first parameter"
+                _ -> pure () -- Non-function or 0-arg function type will be caught later
+            _ -> pure ()
 
-    let extraParamsHints =
-          let x = case calleeExprOrHint of
-                Left (_, H.TFunc ps _ _, _) -> typeToPType <$> tail ps
-                Right (TFuncP ps _ _) -> tail ps
-                _ -> []
-           in x <> replicate (max 0 $ length astExtraArgsExprs - length x) TUnknown
+          pure (calleeExpr, extraArgsExprs)
 
-    extraArgsExprs <- forM (zip astExtraArgsExprs extraParamsHints) $ \(e, h) -> visitExpr ctx h e
+    let calleeFnType = case calleeExpr of H.CalleeExpr (_, x, _) -> x; H.TraitTypeCalleeExpr {fnType} -> fnType
 
-    calleeExpr <- case calleeExprOrHint of
-      Left e -> pure e
-      Right _ -> do
-        let extraParamsHints' = extraArgsExprs <&> (fst >>> snd3 >>> typeToPType)
-        let pType = TFuncP (typeToPType (snd3 lhs) : extraParamsHints') typeHint TUnknown
-        let modParams' = modParams <&> (.fqn)
-        genArgs <- inferGenericArgs modParams' vDefGenParams pType vDefType (thd3 lhs)
-        let gps' = vDefGenParams <&> (.fqn)
-        let gpMap = zip modParams' modArgs <> zip gps' genArgs
-        let t = substituteGenerics gpMap vDefType
-        let genOverEfs = isGenericOverEffect modParams || isGenericOverEffect vDefGenParams
-        whs <- findTraitImpls ctx gpMap vDefWhereClauses (thd3 lhs)
-        case whereClauseIdxMaybe of
-          Just traitLoc -> do
-            let x = H.EWheresGet {traitLoc, fnIdx, nextWhereClauses = whs}
-            pure (x, t, sr)
-          _ -> do
-            let whs' = H.WhereClauseTraits {mod = modWhs, vDef = whs}
-            pure (H.EGlobal fqn (modArgs <> genArgs) genOverEfs whs', t, sr)
-
-    (lhs', extraArgsExprs', retType, fnEffs) <- case snd3 calleeExpr of
+    (lhs', extraArgsExprs', retType, fnEffs) <- case calleeFnType of
       H.TFunc ps r ef -> do
         unless (length ps == length astExtraArgsExprs + 1)
           $ throw (srcRangeOf name astExtraArgsExprs) "Wrong number of arguments to member function"
-        lhs' <- implicitCast ctx lhs $ must $ head ps
         as <- forM (zip (tail ps) extraArgsExprs) $ \(ex, (argExpr, efs)) ->
           implicitCast ctx argExpr ex <&> (,efs)
-        pure (lhs', as, r, case ef of H.TEffect x -> x; _ -> undefined)
+        pure (lhs, as, r, case ef of H.TEffect x -> x; _ -> undefined)
       _ -> throw astLhsExpr "Type is not a function"
 
     let effs = mconcat $ lhsEff : fnEffs : (snd <$> extraArgsExprs')

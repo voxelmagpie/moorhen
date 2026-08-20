@@ -1,4 +1,3 @@
-//", , , "
 //"3, true, Pair(1, 2), Red"
 
 #deriving("Show")
@@ -8,8 +7,7 @@ data Pair = Pair(Int, Int)
 data Colour = Red | Green | Blue
 
 let showIt (x : Show) : String
-	""
-	// x.show()
+	x.show()
 
 let main () : String
 	let a : Show = 3

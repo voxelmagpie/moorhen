@@ -80,3 +80,12 @@ traitRefToText (fqn, gArgs) =
    in if null gArgs then name else name <> "[" <> T.intercalate ", " gArgs' <> "]"
   where
     gArgs' = gArgs <&> typeToText
+
+typeContainsFqn :: Type -> TFqn -> Bool
+typeContainsFqn outer search = case outer of
+  TFunc {params, ret, eff} ->
+    typeContainsFqn eff search || typeContainsFqn ret search || any (`typeContainsFqn` search) params
+  TTuple xs -> any (`typeContainsFqn` search) xs
+  TNamed fqn genArgs -> fqn == search || any (`typeContainsFqn` search) genArgs
+  TEffect xs -> any (`typeContainsFqn` search) xs
+  TLifetime {} -> False

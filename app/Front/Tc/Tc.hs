@@ -145,10 +145,16 @@ typeCheckPackage' = do
         A.BuiltinTypeDecl -> pure ()
         A.Trait {} -> pure ()
         A.Module _ vDefs _ _ -> do
-          (_, _, _, modCtx, _, _, wh) <- visitBlockDecl outerCtx tDef
+          (_, selfType, _, modCtx, _, _, wh) <- visitBlockDecl outerCtx tDef
 
           forM_ (toList vDefs.nameMap) $ \(_, astVDef) -> do
             (vFqn, vDef) <- visitVDef modCtx astVDef wh
+
+            case vDef.type' of
+              H.TFunc ps _ _ -> case ps of
+                p : _ | p == selfType -> pure ()
+                _ -> throw vDef.name "Module functions must take a self parameter"
+              _ -> throw vDef.name "Module members must be functions"
 
             let tNameToGp = HM.fromList $ zip ((snd >>> fst) <$> (tDef.genParams <> astVDef.genParams)) vDef.genParams
             let ctx =

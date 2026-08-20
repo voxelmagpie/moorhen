@@ -409,13 +409,13 @@ cvtExpr (e, t, sr) = do
       pure $ fst e'
     H.EClosure params e' -> do
       cvtClosure t params e' sr <&> fst
-    H.EFnCall (H.EDataCons (H.DataConsInfo {dcIdx}), calleeType, _) args -> do
+    H.EFnCall (H.CalleeExpr (H.EDataCons (H.DataConsInfo {dcIdx}), calleeType, _)) args -> do
       args' <- forM args cvtExpr
       let t' = case calleeType of H.TFunc _ r _ -> r; _ -> undefined
       dataTypeDef <- getTNamedTDef2 t'
       dConssTypes <- getDataConstructorTypes dataTypeDef
       pure $ fst $ mkDataConsInit dConssTypes args' dcIdx sr
-    H.EFnCall callee args -> do
+    H.EFnCall (H.CalleeExpr callee) args -> do
       callee' <- cvtExpr callee
       args' <- forM args cvtExpr
       inAsyncCode <- getIsAsync
@@ -426,6 +426,24 @@ cvtExpr (e, t, sr) = do
       let async = inAsyncCode && fnIsAsync /= NotAsync
 
       pure $ M.EFnCall callee' args' async retType
+    H.EFnCall (H.TraitTypeCalleeExpr {fnType, traitDefIndex, traitDefsTotal}) (a0 : as) -> do
+      uid <- mkLocalVarUid
+      let a0Var = (M.EVar uid Nothing, sr)
+      letStmt <- cvtExpr a0 <&> \x -> (M.SLet uid Nothing False x, snd x)
+      as' <- forM as cvtExpr
+      inAsyncCode <- getIsAsync
+      retType <- cvtType t
+
+      let eff = case fnType of H.TFunc _ _ x -> x; _ -> undefined
+      fnIsAsync <- effectCouldContainAsync eff
+      let async = inAsyncCode && fnIsAsync /= NotAsync
+
+      let arg0 = (M.EIndex a0Var 0 Nothing, sr)
+      let getVTable = (M.EIndex a0Var 1 Nothing, sr)
+      let callee = if traitDefsTotal > 1 then (M.EIndex getVTable traitDefIndex Nothing, sr) else getVTable
+
+      pure $ M.EDoBlock [letStmt] $ Just (M.EFnCall callee (arg0 : as') async retType, sr)
+    H.EFnCall (H.TraitTypeCalleeExpr {}) [] -> undefined
     H.EDoBlock stmts e' -> do
       ss <- concat <$> forM stmts cvtStmt
       e'' <- forM e' cvtExpr

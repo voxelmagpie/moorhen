@@ -244,7 +244,7 @@ data VNameMemberLookupResult
   = NlMembAstValDef Ctx TName A.TDef A.VDef A.TypeExpr -- Member in current package's module (Ctx is outer ctx, block is not set)
   | NlMembValDef PkgName H.Module VFqn -- Imported member from module in another package
 
--- Looks up a member value name in all relevant module
+-- Looks up a member value name in all relevant modules
 -- Searches both current AST and imported namespaces
 -- Returns all matching members from all relevant import blocks
 -- Used for resolving method calls on types

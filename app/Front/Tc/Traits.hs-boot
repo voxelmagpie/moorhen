@@ -14,6 +14,7 @@ import Names
 import SrcLoc (SrcRange)
 
 lookupTrait :: (MonadTc m) => Ctx -> [TFqn] -> A.TypeExpr -> m (List1 H.TraitRef, HashSet VName)
+getTraitMaybe :: (MonadTc m) => Inputs -> TFqn -> m (Maybe H.Trait)
 getTrait :: (MonadTc m) => Inputs -> TFqn -> m H.Trait
 visitBlockDecl :: (MonadTc m) => Ctx -> A.TDef -> m BlockCached
 findTraitImpls :: (MonadTc m) => Ctx -> [(TFqn, H.Type)] -> H.WhereClauses -> SrcRange -> m H.WhereClauseTraitsList

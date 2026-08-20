@@ -2,7 +2,7 @@
 -- License, v. 2.0. If a copy of the MPL was not distributed with this
 -- file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-module Front.Tc.Traits (lookupTrait, visitBlockDecl, findTraitImpls, findTraitImpls', getTrait, lookupMembVNameInCtxWhere, visitTrait) where
+module Front.Tc.Traits (lookupTrait, visitBlockDecl, findTraitImpls, findTraitImpls', getTraitMaybe, getTrait, lookupMembVNameInCtxWhere, visitTrait) where
 
 import Control.Monad (forM, forM_, unless, when)
 import Data.HashMap.Strict qualified as HM
@@ -61,9 +61,8 @@ lookupTrait ctx visited = \case
           _ -> throw sr "Expected trait"
   (_, sr) -> throw sr "Expected trait"
 
--- Looks up a trait by its fully qualified name, returning the H.Trait
-getTrait :: (MonadTc m) => Inputs -> TFqn -> m H.Trait
-getTrait tcIn traitFqn = do
+getTraitMaybe :: (MonadTc m) => Inputs -> TFqn -> m (Maybe H.Trait)
+getTraitMaybe tcIn traitFqn = do
   (thisPkgName, thisPkg) <- getThisPkg
   let pkg = tFqnToPkg traitFqn
   if (pkg == thisPkgName)
@@ -71,19 +70,29 @@ getTrait tcIn traitFqn = do
       let ns = tFqnToNamespace traitFqn
       let tName = tFqnToName traitFqn
       let ast'@(ast, _) = must $ HM.lookup ns tcIn.allAsts
-      let tDef = must $ HM.lookup tName ast.tDefs
+      let tDefMaybe = HM.lookup tName ast.tDefs -- Could be a generic parameter
       let ctx = mkFileCtx ns ast' tcIn
-      case tDef.tDef of
-        A.Trait x _ _ -> visitTrait ctx tDef x.vDefsOrdered x.opMap
-        _ -> undefined
+      case tDefMaybe of
+        Just tDef ->
+          case tDef.tDef of
+            A.Trait x _ _ -> Just <$> visitTrait ctx tDef x.vDefsOrdered x.opMap
+            _ -> pure Nothing
+        _ -> pure Nothing
     else do
       pkg' <- if pkg == thisPkgName then pure thisPkg else getDepPkg pkg
       let traitNs = tFqnToNamespace traitFqn
       let traitName = tFqnToName traitFqn
-      export <- must <$> lookupTNameInPkg pkg' traitNs traitName
-      case export.typ of
-        H.IsTrait x -> pure x
-        _ -> error "getTrait: Expected trait"
+      exportMaybe <- lookupTNameInPkg pkg' traitNs traitName
+      case exportMaybe of
+        Just export ->
+          case export.typ of
+            H.IsTrait x -> pure $ Just x
+            _ -> pure Nothing
+        _ -> pure Nothing
+
+-- Looks up a trait by its fully qualified name, returning the H.Trait
+getTrait :: (MonadTc m) => Inputs -> TFqn -> m H.Trait
+getTrait tcIn traitFqn = getTraitMaybe tcIn traitFqn <&> must
 
 -- Visits an impl or trait block declaration
 -- Caches results to avoid reprocessing, resolves generic parameters and 'for'/Self type
@@ -263,6 +272,11 @@ visitTrait outerCtx tDef vDefs opMap = do
   vDefs' <- forM vDefs $ \astVDef -> do
     (_, vDef) <- visitVDef blkCtx astVDef wh
     when (isJust astVDef.expr) $ error "TODO: Default functions?"
+    case vDef.type' of
+      H.TFunc ps _ _ -> case ps of
+        p : _ | p == selfType -> pure ()
+        _ -> throw vDef.name "Trait functions must take a self parameter"
+      _ -> throw vDef.name "Trait members must be functions"
     pure
       $ H.TraitVDef
         { genParams = drop (length genParams) vDef.genParams,
