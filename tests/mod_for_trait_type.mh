@@ -1,0 +1,9 @@
+//"--> 3 <--"
+
+mod M for Show
+	let show2 (x: Show) : String
+		"--> " ++ x.show() ++ " <--"
+
+let main () : String
+	let x : Show = 3
+	x.show2()
