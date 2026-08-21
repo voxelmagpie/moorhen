@@ -34,8 +34,7 @@ visitPattern ctxVar t (astPat, sr) = do
       ps' <- forM (zip (toList ps) (toList ts)) $ \(p, t') -> visitPattern ctxVar t' p
       pure (H.PTuple (must $ listToList2 ps'), t, sr)
     A.PDataCons name ps -> do
-      ctx <- getVar ctxVar
-      (dcInfo, dataType, dcFieldTypes') <- getDataConsFromType ctx t name
+      (dcInfo, dataType, dcFieldTypes') <- getDataConsFromType t name
 
       unless (t == dataType)
         $ throw sr
@@ -49,8 +48,7 @@ visitPattern ctxVar t (astPat, sr) = do
       ps' <- forM (zip (toList ps) (toList dcFieldTypes)) $ \(p, t') -> visitPattern ctxVar t' p
       pure (H.PDataCons dcInfo ps', t, sr)
     A.PRecord name ps -> do
-      ctx <- getVar ctxVar
-      (dcInfo, dataType, dcFieldTypes') <- getDataConsFromType ctx t name
+      (dcInfo, dataType, dcFieldTypes') <- getDataConsFromType t name
       unless (t == dataType)
         $ throw sr
         $ "Pattern does not match case expr type\n"
@@ -87,8 +85,7 @@ visitDestructure ctxVar t (destr, sr) = case destr of
       ds' <- forM (zipList2 ts (must $ listToList2 $ toList ds)) $ uncurry $ visitDestructure ctxVar
       pure (H.DTuple ds', t, sr)
     _ -> do
-      ctx <- getVar ctxVar
-      (dataTypeDef, (tFqn, genArgs)) <- getDataDefType ctx.tcIn sr t
+      (dataTypeDef, (tFqn, genArgs)) <- getDataDefType sr t
       (name, ts) <- case dataTypeDef.dataCons of
         List1 (H.DataCons (name, _) (H.TupleFields xs)) []
           | notNull xs -> do
@@ -100,8 +97,7 @@ visitDestructure ctxVar t (destr, sr) = case destr of
       let dCons = H.DataConsInfo tFqn name 0 True True dataTypeDef.isEnumType
       pure (H.DDataCons dCons ds', t, sr)
   A.DRecord fields -> do
-    ctx <- getVar ctxVar
-    (dataTypeDef, (tFqn, genArgs)) <- getDataDefType ctx.tcIn sr t
+    (dataTypeDef, (tFqn, genArgs)) <- getDataDefType sr t
     (dConsName, dConsFields) <- case dataTypeDef.dataCons of
       List1 (H.DataCons (name, _) (H.RecordFields xs)) [] -> do
         let gpMap = zip dataTypeDef.t1.genParams genArgs <&> first (.fqn)

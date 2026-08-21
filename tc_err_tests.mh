@@ -324,3 +324,15 @@ data X { a : Int }
 
 mod M for X
 	let a (self : X) : Int -> 1
+
+// --- //
+
+mod M for Int
+	let f (_ : Int) : Int -> 1
+
+let main () : Int
+	M.f(1)
+
+// --- //
+
+let x : Int = Int(3)

@@ -36,7 +36,7 @@ data Hir' = Hir'
 data Type
   = TFunc {params :: [Type], ret :: Type, eff :: Type} -- TODO Store eff as HashSet Type?
   | TTuple (List2 Type)
-  | TNamed TFqn [Type]
+  | TNamed TFqn [Type] -- Corresponds to a TDef
   | TEffect (HashSet Type) -- All HashSet types are TNamed
   | TLifetime Int
   deriving (Show, Generic, Eq, Hashable)

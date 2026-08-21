@@ -34,4 +34,5 @@ class (Monad m) => MonadTcError m where
     when (length e > 100) throwTcException
 
   -- This is for continuing type checking another definition after errors are encountered
+  -- This is never used to mask errors or speculatively type check code
   tryTcKeepErrors :: m a -> m (Maybe a)

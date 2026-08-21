@@ -92,7 +92,7 @@ typeContainsMutVarsEffect = \case
   H.TEffect efs -> any typeContainsMutVarsEffect efs
   H.TLifetime _ -> False
 
--- Visits a type definition (first phase), handles type aliases
+-- Visits a type definition or type alias
 visitTDef :: (MonadTc m) => Ctx -> A.TDef -> m (TFqn, H.TDef)
 visitTDef outerCtx astTDef = do
   assertM $ isNothing outerCtx.block
@@ -139,11 +139,9 @@ visitTDef outerCtx astTDef = do
       addTDef fqn d
       pure (fqn, d)
 
--- Visits a type definition (second phase)
--- Processes data constructors and builds complete type definition
--- Handles builtin types and regular type declarations, not type aliases or impl blocks
-visitDataTypeDef :: (MonadTc m) => Ctx -> A.TDef -> m (TFqn, H.DataTypeDef)
-visitDataTypeDef outerCtx astTDef = do
+-- Visits a data type definition. Not builtins, type aliases, modules, etc.
+visitDataTypeDef :: (MonadTc m) => Ctx -> SrcRange -> A.TDef -> m (TFqn, H.DataTypeDef)
+visitDataTypeDef outerCtx sr astTDef = do
   (fqn, tDef) <- visitTDef outerCtx astTDef
   (_, thisPkg) <- getThisPkg
   getDataTypeDefMaybe thisPkg fqn >>= \case
@@ -170,9 +168,7 @@ visitDataTypeDef outerCtx astTDef = do
               pure $ H.DataCons dConsName $ H.TupleFields types
           let typeIsEnum dataCons = flip all dataCons $ \case H.DataCons _ (H.TupleFields []) -> True; _ -> False
           pure $ H.DataTypeDef tDef conss $ typeIsEnum conss
-        A.BuiltinTypeDecl -> undefined
-        A.Module {} -> undefined
-        A.Trait {} -> undefined
+        _ -> throw sr "Expected data type"
       addDataTypeDef fqn d
       pure (fqn, d)
 
@@ -266,8 +262,20 @@ verifyEffectAndConvertToList t = case t of
     pure $ if tDef.typeKind == EffectType then Just [t] else Nothing
   _ -> pure Nothing
 
-getDataDefType :: (MonadTc m, HasCallStack) => Inputs -> SrcRange -> H.Type -> m (H.DataTypeDef, (TFqn, [H.Type]))
-getDataDefType tcIn sr t = case t of
+-- FQN must point to a type definition, not a generic parameter!
+-- TODO Split TNamed into its own type so it can be passed in instead of the fqn?
+tDefTFqnToAst :: (MonadTc m) => TFqn -> m (Ctx, A.TDef)
+tDefTFqnToAst fqn = do
+  tcIn <- inputs
+  let ns = tFqnToNamespace fqn
+  let astAndImports@(ast, _) = must $ HM.lookup ns tcIn.allAsts
+  let astTDef = must $ HM.lookup (tFqnToName fqn) ast.tDefs
+  let ctx' = mkFileCtx ns astAndImports tcIn
+  pure (ctx', astTDef)
+
+-- Throws if not a data type
+getDataDefType :: (MonadTc m, HasCallStack) => SrcRange -> H.Type -> m (H.DataTypeDef, (TFqn, [H.Type]))
+getDataDefType sr t = case t of
   H.TNamed fqn genArgs -> do
     let pkg = tFqnToPkg fqn
     -- Look up the type definition
@@ -279,11 +287,8 @@ getDataDefType tcIn sr t = case t of
     dataTypeDef <-
       if thisPkg == pkg
         then do
-          let ns = tFqnToNamespace fqn
-          let astAndImports@(ast, _) = must $ HM.lookup ns tcIn.allAsts
-          let ctx' = mkFileCtx ns astAndImports tcIn
-          let astTDef = must $ HM.lookup (fst tDef.name) ast.tDefs
-          visitDataTypeDef ctx' astTDef <&> snd
+          (ctx', astTDef) <- tDefTFqnToAst fqn
+          visitDataTypeDef ctx' sr astTDef <&> snd
         else
           getDataTypeDefMaybe pkg' fqn <&> must
     pure (dataTypeDef, (fqn, genArgs))
@@ -295,9 +300,9 @@ findDConsInType (name, nameSr) dataTypeDef =
     Just y -> pure y
     _ -> throw nameSr $ "No such data constructor '" <> un name <> "' in type " <> un (fst dataTypeDef.t1.name)
 
-getDataConsFromType :: (MonadTc m) => Ctx -> H.Type -> TNameL -> m (H.DataConsInfo, H.Type, H.Fields)
-getDataConsFromType ctx t name@(_, nameSr) = do
-  (dataTypeDef, (_, genArgs')) <- getDataDefType ctx.tcIn nameSr t
+getDataConsFromType :: (MonadTc m) => H.Type -> TNameL -> m (H.DataConsInfo, H.Type, H.Fields)
+getDataConsFromType t name@(_, nameSr) = do
+  (dataTypeDef, (_, genArgs')) <- getDataDefType nameSr t
   (H.DataCons _ dcContents, dcIdx) <- findDConsInType name dataTypeDef
   let gpMap = zip dataTypeDef.t1.genParams genArgs' <&> \(gp, a) -> (gp.fqn, a)
   let tFqn = dataTypeDef.t1.fqn
@@ -331,10 +336,7 @@ getDataCons' ctx hint name@(_, nameSr) f = do
         NlNamespace {} -> throw nameSr "Expected type, got namespace"
         NlGenericType _ -> throw nameSr "Cannot initialise generic types"
         NlAstTypeDef outerCtx astTDef -> do
-          case astTDef.tDef of
-            A.BuiltinTypeDecl -> throw nameSr "Builtin types cannot be initialised in this way"
-            _ -> pure ()
-          (tFqn, dataTypeDef) <- visitDataTypeDef outerCtx astTDef
+          (tFqn, dataTypeDef) <- visitDataTypeDef outerCtx nameSr astTDef
           f tFqn dataTypeDef
         NlTypeDef pkgName (H.TNameExport {fqn, typ}) -> do
           unless (typ == H.IsTypeDef) $ throw nameSr "Not a type"
@@ -374,14 +376,14 @@ getDataCons ctx hint name@(_, nameSr) astGenArgs = do
     pure (H.DataConsInfo tFqn (fst name) dcIdx isFn isProduct dataTypeDef.isEnumType, t, dcFieldTypes)
 
 -- Returns empty list if this is not a record product type
-getFieldsFromType :: (MonadTc m) => Inputs -> H.Type -> m [VName]
-getFieldsFromType tcIn selfType = case selfType of
+getFieldsFromType :: (MonadTc m) => H.Type -> m [VName]
+getFieldsFromType selfType = case selfType of
   H.TNamed fqn _ -> do
     pkg <- getDepOrThisPkg $ tFqnToPkg fqn
     tDef <- getTDefMaybe pkg fqn <&> must
     case tDef.tDefType of
       H.IsDataDef -> do
-        (dataTypeDef, _) <- getDataDefType tcIn def selfType
+        (dataTypeDef, _) <- getDataDefType def selfType
         case dataTypeDef.dataCons of
           List1 (H.DataCons _ (H.RecordFields fields)) [] -> do
             pure $ toList fields <&> fst

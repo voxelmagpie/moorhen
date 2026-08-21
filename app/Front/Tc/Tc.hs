@@ -77,7 +77,7 @@ typeCheckPackage' = do
     forM_ (toList ast.tDefs) $ \(_, tDef) -> do
       case tDef.tDef of
         A.TypeDecl _ _ -> do
-          (fqn, _) <- visitDataTypeDef outerCtx tDef
+          (fqn, _) <- visitDataTypeDef outerCtx (snd tDef.name) tDef
           modVar tExports ((fst tDef.name, H.TNameExport fqn H.IsTypeDef) :)
         A.TypeAliasDecl _ -> do
           (fqn, _) <- visitTDef outerCtx tDef
@@ -147,7 +147,7 @@ typeCheckPackage' = do
         A.Module _ vDefs _ _ -> do
           (_, selfType, _, modCtx, _, _, wh) <- visitBlockDecl outerCtx tDef
 
-          fields <- getFieldsFromType i selfType
+          fields <- getFieldsFromType selfType
 
           forM_ (toList vDefs.nameMap) $ \(_, astVDef) -> do
             when (fst astVDef.name `elem` fields)
