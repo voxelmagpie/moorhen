@@ -889,7 +889,7 @@ let pickAMove
 
 
 
-	dbg $ "Examined " ++ moveCount.show() ++ " moves"
+	dbg("Examined " ++ moveCount.show() ++ " moves")
 	chosenMove
 
 
@@ -914,9 +914,8 @@ let perft (a : AnalysedState, depth : Int, curDepth : Int) : Int
 	count
 
 
-let parseFen (s : String) : State
-	let fields = s.words()
-	assert $ fields.length() >= 3
+let parseFen (fields : Vec[String]) : State
+	assert(fields.length() >= 6)
 
 	let parseRank (s : String) : BoardRank
 		let mut piecesRev : Stack[BoardTile] = Empty
@@ -997,7 +996,7 @@ let parseFen (s : String) : State
 	}
 
 let dbgFromFen (fen : String) @Impure
-	let gameState = parseFen(fen).analyse()
+	let gameState = parseFen(fen.words()).analyse()
 	dbg(gameState.s.board.show())
 
 	match pickAMove(gameState, randomI32(), 3, gameState.s.nextToPlay)
@@ -1033,22 +1032,27 @@ let main () : () @Async
 			set gameState = startingAnalysedState
 		else if l.startsWith("position startpos moves ")
 			set gameStateUciString = l
-			set gameState = startingAnalysedState
 			let moves = l.substring("position startpos moves ".sizeInBytes(), l.sizeInBytes()).words()
-			let mut s = gameState.s
+			let mut s = startingState
 
 			foreach m in moves.iter()
 				set s = s.applyMove(parseUciMove(m, s.board))
 
 			set gameState = s.analyse()
 			dbg(l)
-			dbg $ s.board.show()
+			dbg(s.board.show())
 		else if l.startsWith("position fen ")
 			set gameStateUciString = l
-			let s = parseFen(l.substring("position fen ".sizeInBytes(), l.sizeInBytes()))
+			let words = l.substring("position fen ".sizeInBytes(), l.sizeInBytes()).words()
+			let mut s = parseFen(words)
+
+			if words.length() > 6 and words.atOrPanic(6) == "moves"
+				foreach m in words.iter().skip(7)
+					set s = s.applyMove(parseUciMove(m, s.board))
+
 			set gameState = s.analyse()
 			dbg(l)
-			dbg $ s.board.show()
+			dbg(s.board.show())
 		else if l.startsWith("go ")
 			// Opening book
 			if gameStateUciString == "position startpos"
@@ -1061,18 +1065,18 @@ let main () : () @Async
 				let startTime = getTimeMs()
 
 				let depth = if l == "go depth 1" then 1 else 3
-				dbg $ "Searching with depth " ++ depth.show()
+				dbg("Searching with depth " ++ depth.show())
 
 				let (m, a, e) =
 					match pickAMove(gameState, randomI32(), depth, gameState.s.nextToPlay)
 						Some(x) -> x
 						None -> panic("No moves")
 
-				dbg $ "Search took " ++ (getTimeMs() - startTime).show() ++ "ms"
+				dbg("Search took " ++ (getTimeMs() - startTime).show() ++ "ms")
 				let s = "bestmove " ++ m.toUci(gameState.s.board)
 				printLine(s)
 				dbg(s)
 				dbg(e)
-				dbg $ a.s.board.show()
+				dbg(a.s.board.show())
 		else
 			panic("UCI protocol error")
