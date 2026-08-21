@@ -7,7 +7,7 @@ trait DoesThings
 trait DoesThings2 : DoesThings
 	let bar (x: Self) : Int
 
-mod DoesThingsmod for Int : DoesThings2
+mod DoesThingsMod for Int : DoesThings2
 	let foo (x)
 		x + 1
 	let bar (x)
