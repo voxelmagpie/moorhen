@@ -86,9 +86,9 @@ typeCheckPackage' = do
           (fqn, _) <- visitTDef outerCtx tDef
           modVar tExports ((fst tDef.name, H.TNameExport fqn H.IsTypeDef) :)
         A.Module _ vDefs _ _ -> do
-          (gp, forType, blkFqn, _, traits, allTraitNames, wh) <- visitBlockDecl outerCtx tDef
+          BlockCached {genParams, selfType, blkFqn, traits, recursiveNames, wh} <- visitBlockDecl outerCtx tDef
 
-          forM_ allTraitNames $ \n ->
+          forM_ recursiveNames $ \n ->
             unless (n `elem` (vDefs.nameMap <&> fst . (.name)))
               $ throw tDef.name
               $ "Missing implementation for trait definition '"
@@ -97,10 +97,10 @@ typeCheckPackage' = do
 
           let mod =
                 H.Module
-                  gp
+                  genParams
                   (fst tDef.name)
                   blkFqn
-                  forType
+                  selfType
                   (HM.keys vDefs.nameMap)
                   (vDefs.opMap <&> (<&> ((.name) >>> fst)))
                   traits
@@ -145,7 +145,7 @@ typeCheckPackage' = do
         A.BuiltinTypeDecl -> pure ()
         A.Trait {} -> pure ()
         A.Module _ vDefs _ _ -> do
-          (_, selfType, _, modCtx, _, _, wh) <- visitBlockDecl outerCtx tDef
+          BlockCached {selfType, blkCtx, wh} <- visitBlockDecl outerCtx tDef
 
           fields <- getFieldsFromType selfType
 
@@ -156,7 +156,7 @@ typeCheckPackage' = do
               <> un (fst astVDef.name)
               <> "' has name name as field"
 
-            (vFqn, vDef) <- visitVDef modCtx astVDef wh
+            (vFqn, vDef) <- visitVDef blkCtx astVDef wh
 
             case vDef.type' of
               H.TFunc ps _ _ -> case ps of
@@ -166,7 +166,7 @@ typeCheckPackage' = do
 
             let tNameToGp = HM.fromList $ zip ((snd >>> fst) <$> (tDef.genParams <> astVDef.genParams)) vDef.genParams
             let ctx =
-                  modCtx
+                  blkCtx
                     { fqn = Just $ Left vFqn,
                       genParams = vDef.genParams, -- Already includes module generic parameters
                       blockWhereClauses = wh,

@@ -440,12 +440,12 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
     fromModules <-
       lookupMembVName ctx name >>= \xs -> forM xs $ \case
         NlMembAstValDef outerCtx _ blkTDef astVDef _ -> do
-          (gps, forType, _blkFqn, moduleCtx, _, _, wh) <- visitBlockDecl outerCtx blkTDef
+          BlockCached {genParams = gps, selfType, blkCtx, wh} <- visitBlockDecl outerCtx blkTDef
 
-          modArgsMaybe <- tryInferGenericArgs [] gps (typeToPType $ snd3 lhs) forType (thd3 lhs)
+          modArgsMaybe <- tryInferGenericArgs [] gps (typeToPType $ snd3 lhs) selfType (thd3 lhs)
           case modArgsMaybe of
             Right modArgs -> do
-              (fqn, vDef) <- visitVDef moduleCtx astVDef wh
+              (fqn, vDef) <- visitVDef blkCtx astVDef wh
               case vDef.type' of
                 H.TFunc ps _ _
                   | isLeft (fst name) || length ps == expectedParamsCount -> do

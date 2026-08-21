@@ -15,8 +15,15 @@ import Vars
 
 -- For traits the type is Self
 -- This holds all the type information for a module or trait
--- TODO Make this a record
-type BlockCached = ([H.GenParam], H.Type, TFqn, Ctx, H.TraitsList, HashSet VName, H.WhereClauses)
+data BlockCached = BlockCached
+  { genParams :: [H.GenParam],
+    selfType :: H.Type,
+    blkFqn :: TFqn,
+    blkCtx :: Ctx,
+    traits :: H.TraitsList,
+    recursiveNames :: HashSet VName, -- All names from all trait deps
+    wh :: H.WhereClauses
+  }
 
 -- Subset of state-manipulating functions available during import preprocessing
 class (MonadVars m, MonadTcError m) => MonadTcImports m where

@@ -104,16 +104,16 @@ visitBlockDecl outerCtx blkTDef = do
     Just x -> pure x
     _ -> do
       let blkFqn = TFqn $ un outerCtx.namespace <> ":" <> un name
-      gps <- mkGenParams (Fqn $ un blkFqn) blkTDef.genParams
+      genParams <- mkGenParams (Fqn $ un blkFqn) blkTDef.genParams
 
       let ctxWithGenParams =
             outerCtx
               { fqn = Just $ Right blkFqn,
-                genParams = gps,
-                tNameToGp = HM.fromList $ zip ((snd >>> fst) <$> blkTDef.genParams) gps
+                genParams,
+                tNameToGp = HM.fromList $ zip ((snd >>> fst) <$> blkTDef.genParams) genParams
               }
 
-      (forType, traits, wh) <- case blkTDef.tDef of
+      (selfType, traits, wh) <- case blkTDef.tDef of
         A.Module t _ ts astWh -> do
           t' <- visitTypeExpr ctxWithGenParams t
           let k = getTypeKind t'
@@ -150,9 +150,18 @@ visitBlockDecl outerCtx blkTDef = do
             unless (all (== t0) ts)
               $ throw blkTDef.name ("The trait " <> un (tFqnToName fqn) <> " is included multiple times")
 
-      let blkCtx = ctxWithGenParams {block = Just (name, forType), blockWhereClauses = wh}
+      let blkCtx = ctxWithGenParams {block = Just (name, selfType), blockWhereClauses = wh}
 
-      let x = (gps, forType, blkFqn, blkCtx, traitsListFromList traits', names, wh)
+      let x =
+            BlockCached
+              { genParams,
+                selfType,
+                blkFqn,
+                blkCtx,
+                traits = traitsListFromList traits',
+                recursiveNames = names,
+                wh
+              }
       addBlockDeclCache outerCtx.namespace name x
 
       -- When a generic trait is initialised in a trait/module trait dep list, the dep trait/mod's own
@@ -174,8 +183,8 @@ findTraitImpls' ctx whs sr = do
   allMods <- findAllModules ctx
   allMods' <- forM allMods $ \case
     FoundAstModule outerCtx blkTDef -> do
-      (gps, forType, blkFqn, _, ts, _, w) <- visitBlockDecl outerCtx blkTDef
-      pure (blkFqn, gps, forType, ts, w)
+      BlockCached {genParams, selfType, blkFqn, traits, wh} <- visitBlockDecl outerCtx blkTDef
+      pure (blkFqn, genParams, selfType, traits, wh)
     FoundModule _pkgName blk -> do
       pure (blk.fqn, blk.genParams, blk.forType, blk.traits, blk.whereClauses)
 
@@ -267,7 +276,9 @@ lookupMembVNameInCtxWhere ctx t name = do
 
 visitTrait :: (MonadTc m) => Ctx -> A.TDef -> [A.VDef] -> HashMap OpName (List1 A.VDef) -> m H.Trait
 visitTrait outerCtx tDef vDefs opMap = do
-  (genParams, selfType, blkFqn, blkCtx, traits, recursiveNames, wh) <- visitBlockDecl outerCtx tDef
+  assertM $ case tDef.tDef of A.Trait {} -> True; _ -> False
+
+  BlockCached {genParams, selfType, blkFqn, blkCtx, traits, recursiveNames, wh} <- visitBlockDecl outerCtx tDef
 
   vDefs' <- forM vDefs $ \astVDef -> do
     (_, vDef) <- visitVDef blkCtx astVDef wh
@@ -284,6 +295,7 @@ visitTrait outerCtx tDef vDefs opMap = do
           vDef
         }
 
+  -- Fqn of the implicit Self type which is present for all traits
   let selfFqn = case selfType of H.TNamed f _ -> f; _ -> undefined
 
   let selfTypeGp =

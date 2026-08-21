@@ -43,8 +43,8 @@ visitVDef outerCtx astVDef implsWheres = do
       traitInfoMaybe <- do
         case outerCtx.block of
           Just (blkName, forType) -> do
-            (_, _, _, _, ts, _, _) <- getBlockDeclMaybe outerCtx.namespace blkName <&> must
-            xs <- forM (toList ts) $ \(traitFqn, traitGenArgs) -> do
+            BlockCached {traits} <- getBlockDeclMaybe outerCtx.namespace blkName <&> must
+            xs <- forM (toList traits) $ \(traitFqn, traitGenArgs) -> do
               trait <- getTrait outerCtx.tcIn traitFqn
               case find ((.vDef.name) >>> fst >>> (== name)) trait.vDefs of
                 Just vDef -> pure $ Just (trait, traitGenArgs, vDef)
