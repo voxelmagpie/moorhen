@@ -50,8 +50,8 @@ expandMacros ast = do
 generateEqMod :: A.TDef -> List1 A.DataCons -> SrcRange -> IO A.TDef
 generateEqMod tDef dataConss sr = do
   let name = fst tDef.name
-  let genArgs = tDef.genParams <&> \(_, (n, _)) -> (A.TNamed (n, sr) [], sr)
-  let forType = (A.TNamed (name, sr) genArgs, sr)
+  let genArgs = tDef.genParams <&> \(_, (n, _)) -> (A.TNamed Nothing (n, sr) [], sr)
+  let forType = (A.TNamed Nothing (name, sr) genArgs, sr)
 
   let mkComparisons :: [(A.Expr, A.Expr)] -> A.Expr
       mkComparisons [] = (A.ELitBool True, sr)
@@ -63,8 +63,8 @@ generateEqMod tDef dataConss sr = do
   let eqExpr =
         if isEnum
           then do
-            let intType = (A.TNamed (TName "I32", sr) [], sr)
-            let getter n = (A.EAs (A.EVar (VName n) [], sr) intType, sr)
+            let intType = (A.TNamed Nothing (TName "I32", sr) [], sr)
+            let getter n = (A.EAs (A.EVar Nothing (VName n) [], sr) intType, sr)
             mkComparisons [(getter "x", getter "y")]
           else case dataConss of
             -- 1 data constructor (product type)
@@ -72,18 +72,18 @@ generateEqMod tDef dataConss sr = do
               case fields of
                 A.TupleFields fs -> do
                   let idxs = [0 :: Int .. length fs - 1]
-                  let mkGetter i n = (A.EIndex (A.EVar (VName n) [], sr) (fromIntegral i), sr)
+                  let mkGetter i n = (A.EIndex (A.EVar Nothing (VName n) [], sr) (fromIntegral i), sr)
                   let gettersX = idxs <&> \i -> mkGetter i "x"
                   let gettersY = idxs <&> \i -> mkGetter i "y"
                   mkComparisons (zip gettersX gettersY)
                 A.RecordFields fs -> do
                   let names = toList fs <&> (fst >>> fst)
-                  let gettersX = names <&> \n -> (A.EFieldAccess (A.EVar (VName "x") [], sr) (n, sr), sr)
-                  let gettersY = names <&> \n -> (A.EFieldAccess (A.EVar (VName "y") [], sr) (n, sr), sr)
+                  let gettersX = names <&> \n -> (A.EFieldAccess (A.EVar Nothing (VName "x") [], sr) (n, sr), sr)
+                  let gettersY = names <&> \n -> (A.EFieldAccess (A.EVar Nothing (VName "y") [], sr) (n, sr), sr)
                   mkComparisons (zip gettersX gettersY)
             -- Sum type, requires pattern match
             _ -> do
-              let matchExpr = (A.ETuple $ List2 (A.EVar (VName "x") [], sr) (A.EVar (VName "y") [], sr) [], sr)
+              let matchExpr = (A.ETuple $ List2 (A.EVar Nothing (VName "x") [], sr) (A.EVar Nothing (VName "y") [], sr) [], sr)
               let mkBranch (A.DataCons dcName fields) = do
                     let numFields = case fields of A.TupleFields fs -> length fs; A.RecordFields fs -> length fs
                     let mkFieldPattern prefix i = VName (prefix <> tShow i)
@@ -104,7 +104,7 @@ generateEqMod tDef dataConss sr = do
                                     []
                             (A.PTuple xs, sr)
 
-                    let e = mkComparisons $ zip (xNames <&> \n -> (A.EVar n [], sr)) (yNames <&> \n -> (A.EVar n [], sr))
+                    let e = mkComparisons $ zip (xNames <&> \n -> (A.EVar Nothing n [], sr)) (yNames <&> \n -> (A.EVar Nothing n [], sr))
                     A.MatchBranch ptn Nothing e
               let finalBranch = A.MatchBranch (A.PIgnore, sr) Nothing (A.ELitBool False, sr)
               let matchBranches = must $ listToList1 $ (toList dataConss <&> mkBranch) <> [finalBranch]
@@ -116,8 +116,8 @@ generateEqMod tDef dataConss sr = do
   let eqVDef = A.VDef (VName "eq", sr) (Just (OpName "==", sr)) [] [] Nothing (Just eqCloExpr) 0
 
   let neqExpr =
-        let x = (A.EVar (VName "x") [], sr)
-            y = (A.EVar (VName "y") [], sr)
+        let x = (A.EVar Nothing (VName "x") [], sr)
+            y = (A.EVar Nothing (VName "y") [], sr)
             eqOp = (A.EMemberCall x (Right (OpName "=="), sr) [y], sr)
             notEq = (A.EMemberCall eqOp (Right (OpName "!"), sr) [], sr)
          in (A.EClosure [cloParam "x", cloParam "y"] notEq, sr)
@@ -128,9 +128,9 @@ generateEqMod tDef dataConss sr = do
   let opMap = HM.fromList [(OpName "==", List1 eqVDef []), (OpName "!=", List1 neqVDef [])]
   let vDefs = A.BlockInner {vDefsOrdered, nameMap, opMap}
 
-  let eqTrait = (A.TNamed (TName "Eq", sr) [], sr)
+  let eqTrait = (A.TNamed Nothing (TName "Eq", sr) [], sr)
 
-  let whereClauses = tDef.genParams <&> \(_, (n, _)) -> ((A.TNamed (n, sr) [], sr), (A.TNamed (TName "Eq", sr) [], sr))
+  let whereClauses = tDef.genParams <&> \(_, (n, _)) -> ((A.TNamed Nothing (n, sr) [], sr), (A.TNamed Nothing (TName "Eq", sr) [], sr))
   let mod = A.Module forType vDefs [eqTrait] whereClauses
   let modName = TName $ un name <> "Eq"
   pure $ A.TDef {name = (modName, sr), genParams = tDef.genParams, isEffect = False, tDef = mod}
@@ -138,8 +138,8 @@ generateEqMod tDef dataConss sr = do
 generateShowMod :: A.TDef -> List1 A.DataCons -> SrcRange -> IO A.TDef
 generateShowMod tDef dataConss sr = do
   let name = fst tDef.name
-  let genArgs = tDef.genParams <&> \(_, (n, _)) -> (A.TNamed (n, sr) [], sr)
-  let forType = (A.TNamed (name, sr) genArgs, sr)
+  let genArgs = tDef.genParams <&> \(_, (n, _)) -> (A.TNamed Nothing (n, sr) [], sr)
+  let forType = (A.TNamed Nothing (name, sr) genArgs, sr)
 
   let lit :: Text -> A.Expr
       lit s = (A.ELitString s, sr)
@@ -152,7 +152,7 @@ generateShowMod tDef dataConss sr = do
 
   -- x.show()
   let showField :: VName -> A.Expr
-      showField n = (A.EMemberCall (A.EVar n [], sr) (Left (VName "show"), sr) [], sr)
+      showField n = (A.EMemberCall (A.EVar Nothing n [], sr) (Left (VName "show"), sr) [], sr)
 
   let wrapParens :: Text -> Text -> [A.Expr] -> A.Expr
       wrapParens _ _ [] = lit "" -- Empty data constructor
@@ -178,7 +178,7 @@ generateShowMod tDef dataConss sr = do
             let args = intersperse (lit ", ") args'
             A.MatchBranch ptn Nothing $ mkAppend $ lit (dcName' <> "{") : args <> [lit "}"]
 
-  let matchExpr = (A.EVar (VName "x") [], sr)
+  let matchExpr = (A.EVar Nothing (VName "x") [], sr)
   let matchBranches = dataConss <&> mkBranch
   let showExpr = (A.EMatch matchExpr matchBranches, sr)
 
@@ -190,8 +190,8 @@ generateShowMod tDef dataConss sr = do
   let nameMap = HM.fromList [(VName "show", showVDef)]
   let vDefs = A.BlockInner {vDefsOrdered, nameMap, opMap = def}
 
-  let showTrait = (A.TNamed (TName "Show", sr) [], sr)
-  let whereClauses = tDef.genParams <&> \(_, (n, _)) -> ((A.TNamed (n, sr) [], sr), (A.TNamed (TName "Show", sr) [], sr))
+  let showTrait = (A.TNamed Nothing (TName "Show", sr) [], sr)
+  let whereClauses = tDef.genParams <&> \(_, (n, _)) -> ((A.TNamed Nothing (n, sr) [], sr), (A.TNamed Nothing (TName "Show", sr) [], sr))
   let mod = A.Module forType vDefs [showTrait] whereClauses
   let modName = TName $ un name <> "Show"
   pure $ A.TDef {name = (modName, sr), genParams = tDef.genParams, isEffect = False, tDef = mod}

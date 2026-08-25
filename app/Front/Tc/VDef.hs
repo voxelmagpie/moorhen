@@ -135,11 +135,10 @@ visitVDefExpr ctx ex expr@(_, sr) = do
   addVDefExpr fqn e'' nextUid
 
 -- Looks up a global value definition by name (may be in current file or imported)
-lookupGlobalVDef :: (MonadTc m) => Ctx -> VName -> SrcRange -> m (VFqn, H.VDef)
-lookupGlobalVDef ctx name sr = do
-  lookupVName ctx (name, sr) >>= \case
+lookupGlobalVDef :: (MonadTc m) => Ctx -> Maybe TNameL -> VName -> SrcRange -> m (VFqn, H.VDef)
+lookupGlobalVDef ctx qualMaybe name sr = do
+  lookupVName ctx qualMaybe (name, sr) >>= \case
     NlAstValDef outerCtx astVDef ->
-      -- TODO Will need to pass in where clauses once directly accessing impl block vdefs is added
       visitVDef outerCtx astVDef def <&> \(a, b) -> (a, b)
     NlValDef pkgName _ fqn -> do
       pkg <- getDepPkg pkgName

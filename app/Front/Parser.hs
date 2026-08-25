@@ -648,16 +648,21 @@ typeExpr = do
               _ <- symbol ")"
               pure t0
       ),
-      -- X $ Y[Z]
-      ( PredMany [PredTName, PredSym "$"],
+      -- X[Y, Z], X $ Y[Z]
+      ( PredTName,
         do
-          n <- tName
-          _ <- symbol "$"
-          e <- typeExpr
-          pure (A.TNamed n [e], srcRangeOf n e)
+          (n, n') <- typeNameQualMaybe
+          peekToken >>= \case
+            Just (Symbol "$", _) -> do
+              _ <- symbol "$"
+              e <- typeExpr
+              pure (A.TNamed n n' [e], srcRangeOf n e)
+            Just (Symbol "[", _) -> do
+              (gArgs, sr') <- genArgs
+              pure (A.TNamed n n' gArgs, srcRangeOf (srcRangeOf n n') sr')
+            _ -> do
+              pure (A.TNamed n n' [], srcRangeOf n n')
       ),
-      -- X[Y, Z]
-      (PredTName, namedType),
       -- 'varName
       ( PredSym "'",
         do
@@ -667,11 +672,22 @@ typeExpr = do
       )
     ]
 
+typeNameQualMaybe :: (Args) => IO (Maybe TNameL, TNameL)
+typeNameQualMaybe = do
+  n <- tName
+  peekToken >>= \case
+    Just (Symbol ".", _) -> do
+      _ <- symbol "."
+      n' <- tName
+      pure (Just n, n')
+    _ -> do
+      pure (Nothing, n)
+
 namedType :: (Args) => IO A.TypeExpr
 namedType = do
-  n <- tName
+  (qualMaybe, n) <- typeNameQualMaybe
   (gArgs, sr') <- genArgsMaybe
-  pure (A.TNamed n gArgs, srcRangeOf n sr')
+  pure (A.TNamed qualMaybe n gArgs, srcRangeOf (srcRangeOf qualMaybe n) sr')
 
 typeExprInd :: (Args) => IO A.TypeExpr
 typeExprInd = oneOf [(PredMany [PredSym "\\", PredTk Indent], fnTypeExprInd), (PredAlways, typeExpr)]
@@ -920,7 +936,7 @@ atomExpr isInd = do
           Just (Kw KwAs, _) -> asSuffix e
           Just (Symbol "{", _) ->
             case e of
-              (A.EDataCons nameL typeArgs, _) -> recordInitSuffix e nameL typeArgs
+              (A.EDataCons qualMaybe nameL typeArgs, _) -> recordInitSuffix e qualMaybe nameL typeArgs
               _ -> recordUpdateSuffix e
           _ -> pure e
   go base
@@ -935,7 +951,7 @@ atomExpr isInd = do
         Just (Kw KwTrue, sr) -> anyToken $> (A.ELitBool True, sr)
         Just (Kw KwFalse, sr) -> anyToken $> (A.ELitBool False, sr)
         Just (Ident _, _) -> variableExpr
-        Just (TypeName _, _) -> dataConsExpr
+        Just (TypeName _, _) -> dataConsOrQualVarExpr
         Just (Symbol "{", _) -> doBlockExpr
         Just (Symbol "(", _) -> tupleOrParenExpr
         Just (Symbol "[", _) -> listExpr
@@ -952,13 +968,31 @@ atomExpr isInd = do
     variableExpr = do
       (name, nameSr) <- vName
       (typeArgs, genArgsSr) <- genArgsMaybe
-      pure (A.EVar name typeArgs, srcRangeOf nameSr genArgsSr)
+      pure (A.EVar Nothing name typeArgs, srcRangeOf nameSr genArgsSr)
 
-    dataConsExpr :: (Args) => IO A.Expr
-    dataConsExpr = do
-      nameL@(_, nameSr) <- tName
-      (typeArgs, genArgsSr) <- genArgsMaybe
-      pure (A.EDataCons nameL typeArgs, srcRangeOf nameSr genArgsSr)
+    dataConsOrQualVarExpr :: (Args) => IO A.Expr
+    dataConsOrQualVarExpr = do
+      name1L@(_, name1Sr) <- tName
+      peekToken >>= \case
+        Just (Symbol ".", _) -> do
+          _ <- symbol "."
+          oneOf
+            [ ( PredVName,
+                do
+                  (name2, name2Sr) <- vName
+                  (typeArgs, genArgsSr) <- genArgsMaybe
+                  pure (A.EVar (Just name1L) name2 typeArgs, srcRangeOf name2Sr genArgsSr)
+              ),
+              ( PredTName,
+                do
+                  name2L@(_, name2Sr) <- tName
+                  (typeArgs, genArgsSr) <- genArgsMaybe
+                  pure (A.EDataCons (Just name1L) name2L typeArgs, srcRangeOf name2Sr genArgsSr)
+              )
+            ]
+        _ -> do
+          (typeArgs, genArgsSr) <- genArgsMaybe
+          pure (A.EDataCons Nothing name1L typeArgs, srcRangeOf name1Sr genArgsSr)
 
     recordFieldInit :: (Args) => IO (VNameL, Maybe A.Expr)
     recordFieldInit = do
@@ -1114,8 +1148,8 @@ atomExpr isInd = do
       ty@(_, sr1) <- typeExpr
       pure (A.EAs e ty, srcRangeOf sr0 sr1)
 
-    recordInitSuffix :: (Args) => A.Expr -> TNameL -> [A.TypeExpr] -> IO A.Expr
-    recordInitSuffix e nameL typeArgs = do
+    recordInitSuffix :: (Args) => A.Expr -> Maybe TNameL -> TNameL -> [A.TypeExpr] -> IO A.Expr
+    recordInitSuffix e qualMaybe nameL typeArgs = do
       _ <- anyToken -- consume the '{'
       (fields, endSr) <-
         -- Check if next token is Indent for indented syntax
@@ -1131,7 +1165,7 @@ atomExpr isInd = do
             (_, endSr) <- symbol "}"
             pure (fieldsList, endSr)
 
-      pure (A.ERecordInit (A.TNamed nameL typeArgs, snd e) fields, srcRangeOf e endSr)
+      pure (A.ERecordInit (A.TNamed qualMaybe nameL typeArgs, snd e) fields, srcRangeOf e endSr)
 
     recordUpdateSuffix :: (Args) => A.Expr -> IO A.Expr
     recordUpdateSuffix e = do

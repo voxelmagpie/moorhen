@@ -156,33 +156,36 @@ visitELitList ctx typeHint (theExpr, sr) = case theExpr of
 
 visitEVar :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
 visitEVar ctx typeHint (theExpr, sr) = case theExpr of
-  A.EVar name genArgs -> do
-    case findLocalVarByName ctx name of
-      Just v -> do
-        unless (null genArgs) $ throw sr "Local variables cannot be generic"
-        pure ((H.EVar v.uid (un name), v.typ, sr), def)
-      Nothing -> do
-        -- Global variable
-        (fqn, vDef) <- lookupGlobalVDef ctx name sr
+  A.EVar qualMaybe name genArgs -> do
+    let findGlobal = do
+          (fqn, vDef) <- lookupGlobalVDef ctx qualMaybe name sr
 
-        (t, ts, whs) <- case genArgs of
-          [] -> do
-            let gps = vDef.genParams <&> (.fqn)
-            gpTypes <- inferGenericArgs [] vDef.genParams typeHint vDef.type' sr
-            let t = substituteGenerics (zip gps gpTypes) vDef.type'
-            let gpMap = zip vDef.genParams gpTypes <&> \(gp, a) -> (gp.fqn, a)
-            whs <- findTraitImpls ctx gpMap vDef.whereClauses sr
-            pure (t, def, whs)
-          _ -> do
-            unless (length genArgs == length vDef.genParams) $ throw sr "Wrong number of generic arguments"
-            genArgs' <- forM genArgs $ visitTypeExpr ctx
-            checkGenArgKinds $ zip vDef.genParams $ zip genArgs' $ snd <$> genArgs
-            let gpMap = zip vDef.genParams genArgs' <&> \(gp, a) -> (gp.fqn, a)
-            whs <- findTraitImpls ctx gpMap vDef.whereClauses sr
-            let t = substituteGenerics gpMap vDef.type'
-            pure (t, genArgs', whs)
-        let whs' = H.WhereClauseTraits {mod = [], vDef = whs}
-        pure ((H.EGlobal fqn ts (isGenericOverEffect vDef.genParams) whs', t, sr), def)
+          (t, ts, whs) <- case genArgs of
+            [] -> do
+              let gps = vDef.genParams <&> (.fqn)
+              gpTypes <- inferGenericArgs [] vDef.genParams typeHint vDef.type' sr
+              let t = substituteGenerics (zip gps gpTypes) vDef.type'
+              let gpMap = zip vDef.genParams gpTypes <&> \(gp, a) -> (gp.fqn, a)
+              whs <- findTraitImpls ctx gpMap vDef.whereClauses sr
+              pure (t, def, whs)
+            _ -> do
+              unless (length genArgs == length vDef.genParams) $ throw sr "Wrong number of generic arguments"
+              genArgs' <- forM genArgs $ visitTypeExpr ctx
+              checkGenArgKinds $ zip vDef.genParams $ zip genArgs' $ snd <$> genArgs
+              let gpMap = zip vDef.genParams genArgs' <&> \(gp, a) -> (gp.fqn, a)
+              whs <- findTraitImpls ctx gpMap vDef.whereClauses sr
+              let t = substituteGenerics gpMap vDef.type'
+              pure (t, genArgs', whs)
+          let whs' = H.WhereClauseTraits {mod = [], vDef = whs}
+          pure ((H.EGlobal fqn ts (isGenericOverEffect vDef.genParams) whs', t, sr), def)
+
+    case qualMaybe of
+      Just _ -> findGlobal
+      _ -> case findLocalVarByName ctx name of
+        Just v -> do
+          unless (null genArgs) $ throw sr "Local variables cannot be generic"
+          pure ((H.EVar v.uid (un name), v.typ, sr), def)
+        _ -> findGlobal
   _ -> undefined
 
 visitEClosure :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
@@ -219,24 +222,27 @@ visitEFnCall :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, Ha
 visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
   A.EFnCall astCalleeExpr astArgsExprs -> do
     calleeExprOrHint <- case fst astCalleeExpr of
-      A.EVar name [] -> do
-        case findLocalVarByName ctx name of
-          Just v -> do
-            pure $ Left ((H.EVar v.uid (un name), v.typ, sr), def)
-          _ -> do
-            -- Global variable
-            (fqn, vDef) <- lookupGlobalVDef ctx name sr
+      A.EVar qualMaybe name [] -> do
+        let findGlobal = do
+              (fqn, vDef) <- lookupGlobalVDef ctx qualMaybe name sr
 
-            let gp = vDef.genParams
-            if null gp
-              then pure $ Left ((H.EGlobal fqn [] False def, vDef.type', sr), def)
-              else do
-                let paramHints = replicate (length astArgsExprs) TUnknown
-                gpHints <- inferGenericArgsHints [] vDef.genParams (TFuncP paramHints typeHint TUnknown) vDef.type' sr
-                let gps' = vDef.genParams <&> (.fqn)
-                pure $ Right $ genericTypeToPType (zip gps' gpHints) vDef.type'
-      A.EDataCons name [] ->
-        getDataCons' ctx typeHint name $ \fqn dataTypeDef -> do
+              let gp = vDef.genParams
+              if null gp
+                then pure $ Left ((H.EGlobal fqn [] False def, vDef.type', sr), def)
+                else do
+                  let paramHints = replicate (length astArgsExprs) TUnknown
+                  gpHints <- inferGenericArgsHints [] vDef.genParams (TFuncP paramHints typeHint TUnknown) vDef.type' sr
+                  let gps' = vDef.genParams <&> (.fqn)
+                  pure $ Right $ genericTypeToPType (zip gps' gpHints) vDef.type'
+
+        case qualMaybe of
+          Just _ -> findGlobal
+          _ -> case findLocalVarByName ctx name of
+            Just v ->
+              pure $ Left ((H.EVar v.uid (un name), v.typ, sr), def)
+            _ -> findGlobal
+      A.EDataCons qualMaybe name [] ->
+        getDataCons' ctx typeHint qualMaybe name $ \fqn dataTypeDef -> do
           (H.DataCons _ dcContents, dcIdx) <- findDConsInType name dataTypeDef
           genericType <- case dcContents of
             H.TupleFields xs | notNull xs -> pure $ H.TFunc xs dataTypeDef.t1.selfType (H.TEffect def)
@@ -403,9 +409,9 @@ visitEMatch ctx typeHint (theExpr, sr) = case theExpr of
 
 visitEDataCons :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
 visitEDataCons ctx typeHint (theExpr, sr) = case theExpr of
-  A.EDataCons name genArgs -> do
+  A.EDataCons qualMaybe name genArgs -> do
     e <- do
-      (dcInfo, dataType, dcFieldTypes') <- getDataCons ctx typeHint name genArgs
+      (dcInfo, dataType, dcFieldTypes') <- getDataCons ctx typeHint qualMaybe name genArgs
       case dcFieldTypes' of
         H.TupleFields [] -> pure (H.EDataCons dcInfo, dataType, sr)
         H.TupleFields dcFieldTypes -> do
@@ -796,8 +802,8 @@ visitERecordInit ctx typeHint (theExpr, sr) = case theExpr of
   A.ERecordInit astDataCons astFieldValues -> do
     -- Use the type expression to get the data constructor & type
     (dCons, recordType, dConsFields') <- case fst astDataCons of
-      A.TNamed typeName typeArgs -> do
-        getDataCons ctx typeHint typeName typeArgs
+      A.TNamed qualMaybe typeName typeArgs -> do
+        getDataCons ctx typeHint qualMaybe typeName typeArgs
       _ -> error "Not a named type"
     dConsFields <- case dConsFields' of
       H.TupleFields _ -> throw sr "Not a record"
@@ -806,7 +812,7 @@ visitERecordInit ctx typeHint (theExpr, sr) = case theExpr of
     fieldValuesAndEffects <- forM astFieldValues $ \(n, eMaybe) -> do
       let e = case eMaybe of
             Just e' -> e'
-            _ -> (A.EVar (fst n) [], snd n)
+            _ -> (A.EVar Nothing (fst n) [], snd n)
       -- Lookup field type in dConsFields
       expectedType <- case lookup (fst n) $ toList dConsFields of
         Just t -> pure t

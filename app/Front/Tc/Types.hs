@@ -183,7 +183,7 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
   A.TUnit -> do
     (thisPkgName, _) <- getThisPkg
     when (un thisPkgName == "#builtins") $ do
-      void $ visitTypeExpr ctx (A.TNamed (TName "Unit", sr) [], sr)
+      void $ visitTypeExpr ctx (A.TNamed Nothing (TName "Unit", sr) [], sr)
     pure $ H.TNamed (TFqn "#builtins/:Unit") []
   A.TTuple ts -> do
     ts' <- forM ts $ visitTypeExpr ctx
@@ -195,23 +195,20 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
         Just x -> pure x
         _ -> throw sr $ "Type is not an effect: " <> typeToText t
     pure $ H.TEffect $ HS.fromList $ concat es
-  A.TNamed (TName "Self", _) genArgs -> do
+  A.TNamed Nothing (TName "Self", _) genArgs -> do
     unless (null genArgs) $ throw sr "Self type does not take generic arguments"
     case ctx.block of
       Just (_, selfType) -> pure selfType
       _ -> throw sr "Self type is only valid within impl or trait blocks"
-  A.TNamed name genArgs -> do
+  A.TNamed qualMaybe name genArgs -> do
     genArgs' <- forM genArgs $ visitTypeExpr ctx
-    lookupTypeName ctx name >>= \case
-      NlAstNamespace {} ->
-        throw sr "Expected type, got namespace"
-      NlNamespace {} ->
-        throw sr "Expected type, got namespace"
-      NlGenericType t -> do
+    lookupTypeName ctx (combineQualMaybeAndTName qualMaybe name) >>= \case
+      (_, _ : _) -> throw sr "Expected type, got data constructor accessor"
+      (NlGenericType t, []) -> do
         unless (null genArgs)
           $ throw sr "Cannot apply generics to type (higher-kinded types are not supported)"
         pure t
-      NlAstTypeDef outerCtx astTDef -> do
+      (NlAstTypeDef outerCtx astTDef, []) -> do
         case astTDef.tDef of
           A.TypeAliasDecl {} -> pure ()
           A.TypeDecl {} -> pure ()
@@ -228,7 +225,7 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
             pure $ substituteGenerics (zip gps genArgs') tDef.selfType
           else
             pure $ H.TNamed tFqn genArgs'
-      NlTypeDef pkgName (H.TNameExport {fqn, typ}) -> do
+      (NlTypeDef pkgName (H.TNameExport {fqn, typ}), []) -> do
         case typ of
           H.IsTypeDef -> pure ()
           H.IsTrait _ -> pure ()
@@ -317,8 +314,8 @@ mkDConsFieldTypes dcContents gpMap =
     H.TupleFields xs -> H.TupleFields $ xs <&> substituteGenerics gpMap
     H.RecordFields xs -> H.RecordFields $ xs <&> second (substituteGenerics gpMap)
 
-getDataCons' :: (MonadTc m) => Ctx -> PType -> TNameL -> (TFqn -> H.DataTypeDef -> m a) -> m a
-getDataCons' ctx hint name@(_, nameSr) f = do
+getDataCons' :: (MonadTc m) => Ctx -> PType -> Maybe TNameL -> TNameL -> (TFqn -> H.DataTypeDef -> m a) -> m a
+getDataCons' ctx hint qualMaybe name@(_, nameSr) f = do
   let h = case hint of TFuncP {ret} -> ret; _ -> hint
   case h of
     TNamedP fqn _ -> do
@@ -331,14 +328,14 @@ getDataCons' ctx hint name@(_, nameSr) f = do
       f fqn dataTypeDef
     _ -> do
       -- Try looking up the type name instead
-      lookupTypeName ctx name >>= \case
-        NlAstNamespace {} -> throw nameSr "Expected type, got namespace"
-        NlNamespace {} -> throw nameSr "Expected type, got namespace"
-        NlGenericType _ -> throw nameSr "Cannot initialise generic types"
-        NlAstTypeDef outerCtx astTDef -> do
+      lookupTypeName ctx (combineQualMaybeAndTName qualMaybe name) >>= \case
+        (NlGenericType _, _ : _) -> throw nameSr "Cannot access data constructors within generic types"
+        (_, _ : _) -> error "TODO: Direct data constructor access"
+        (NlGenericType _, _) -> throw nameSr "Cannot initialise generic types"
+        (NlAstTypeDef outerCtx astTDef, []) -> do
           (tFqn, dataTypeDef) <- visitDataTypeDef outerCtx nameSr astTDef
           f tFqn dataTypeDef
-        NlTypeDef pkgName (H.TNameExport {fqn, typ}) -> do
+        (NlTypeDef pkgName (H.TNameExport {fqn, typ}), []) -> do
           unless (typ == H.IsTypeDef) $ throw nameSr "Not a type"
           pkg <- getDepPkg pkgName
           tDef <- getTDefMaybe pkg fqn <&> must
@@ -348,9 +345,9 @@ getDataCons' ctx hint name@(_, nameSr) f = do
 
 -- Resolves a data constructor by name
 -- Infers generic arguments and returns constructor info, type, and field types
-getDataCons :: (MonadTc m) => Ctx -> PType -> TNameL -> [A.TypeExpr] -> m (H.DataConsInfo, H.Type, H.Fields)
-getDataCons ctx hint name@(_, nameSr) astGenArgs = do
-  getDataCons' ctx hint name $ \tFqn dataTypeDef -> do
+getDataCons :: (MonadTc m) => Ctx -> PType -> Maybe TNameL -> TNameL -> [A.TypeExpr] -> m (H.DataConsInfo, H.Type, H.Fields)
+getDataCons ctx hint qualMaybe name@(_, nameSr) astGenArgs = do
+  getDataCons' ctx hint qualMaybe name $ \tFqn dataTypeDef -> do
     (H.DataCons _ dcContents, dcIdx) <- findDConsInType name dataTypeDef
     let gps = dataTypeDef.t1.genParams
     (t, gpMap) <- case astGenArgs of

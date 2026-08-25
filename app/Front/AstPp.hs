@@ -80,8 +80,12 @@ ppType (TFunc args ret ef, _) = T.concat ["(\\", intercalate ", " (ppType <$> ar
     ef' = case ef of
       [] -> ""
       ts -> "@(" <> T.intercalate ", " (ts <&> ppType) <> ")"
-ppType (TNamed name [], _) = un $ fst name
-ppType (TNamed name params, _) = T.concat [un $ fst name, "[", intercalate ", " (ppType <$> params), "]"]
+ppType (TNamed qualMaybe name params, _) =
+  T.concat
+    [ maybe "" (fst >>> un >>> (<> ".")) qualMaybe,
+      un $ fst name,
+      if null params then "" else T.concat ["[", intercalate ", " (ppType <$> params), "]"]
+    ]
 ppType (TEffect ef, _) = case ef of
   [] -> "@()"
   ts -> "@(" <> T.intercalate ", " (ts <&> ppType) <> ")"
@@ -95,8 +99,12 @@ ppExpr (ELitInt n, _) = tShow n
 ppExpr (ELitFloat t, _) = t
 ppExpr (ELitBool b, _) = tShow b
 ppExpr (ELitString s, _) = T.concat ["\"", T.map (\c -> if c >= ' ' then c else '?') s, "\""]
-ppExpr (EVar name [], _) = un name
-ppExpr (EVar name gArgs, _) = un name <> "[" <> T.intercalate ", " (ppType <$> gArgs) <> "]"
+ppExpr (EVar qualMaybe name gArgs, _) =
+  T.concat
+    [ maybe "" (fst >>> un >>> (<> ".")) qualMaybe,
+      un name,
+      if null gArgs then "" else T.concat ["[", intercalate ", " (ppType <$> gArgs), "]"]
+    ]
 ppExpr (EClosure params body, _) = T.concat ["\\", intercalate ", " (params <&> uncurry ppVarDecl), " -> ", ppExpr body]
 ppExpr (EFnCall f args, _) = T.concat [ppExpr f, "(", argsStr, ")"]
   where
@@ -109,8 +117,12 @@ ppExpr (ETuple es, _) = T.concat ["(", intercalate ", " (ppExpr <$> toList es), 
 ppExpr (EAnd l r, _) = T.concat ["(", ppExpr l, " and ", ppExpr r, ")"]
 ppExpr (EOr l r, _) = T.concat ["(", ppExpr l, " or ", ppExpr r, ")"]
 ppExpr (EMatch e ps, _) = "case " <> ppExpr e <> " of " <> T.intercalate ", " (ppPatternBranch <$> toList ps)
-ppExpr (EDataCons name [], _) = un (fst name)
-ppExpr (EDataCons name gArgs, _) = un (fst name) <> "[" <> T.intercalate ", " (ppType <$> gArgs) <> "]"
+ppExpr (EDataCons qualMaybe name gArgs, _) =
+  T.concat
+    [ maybe "" (fst >>> un >>> (<> ".")) qualMaybe,
+      un $ fst name,
+      if null gArgs then "" else T.concat ["[", intercalate ", " (ppType <$> gArgs), "]"]
+    ]
 ppExpr (EMemberCall lhs (name, _) args, _) = T.concat [ppExpr lhs, ".", getName name, "(", argsStr, ")"]
   where
     getName = \case Left x -> un x; Right x -> un x

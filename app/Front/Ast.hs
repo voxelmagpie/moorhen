@@ -79,7 +79,7 @@ data TypeExpr'
   = TFunc {params :: [TypeExpr], ret :: TypeExpr, effects :: [TypeExpr]}
   | TUnit
   | TTuple (List2 TypeExpr)
-  | TNamed TNameL [TypeExpr]
+  | TNamed (Maybe TNameL) TNameL [TypeExpr]
   | TEffect [TypeExpr]
   | TLifetime VName
   deriving (Show, Generic, Eq)
@@ -93,7 +93,7 @@ data Expr'
   | ELitBool Bool
   | ELitString Text
   | ELitList [Expr]
-  | EVar VName [TypeExpr]
+  | EVar (Maybe TNameL) VName [TypeExpr]
   | EClosure [(Destructure, Maybe TypeExpr)] Expr
   | EFnCall Expr [Expr]
   | EDoBlock [Stmt] (Maybe Expr)
@@ -102,7 +102,7 @@ data Expr'
   | EAnd Expr Expr
   | EOr Expr Expr
   | EMatch Expr (List1 MatchBranch)
-  | EDataCons TNameL [TypeExpr]
+  | EDataCons (Maybe TNameL) TNameL [TypeExpr]
   | EMemberCall Expr (Either VName OpName, SrcRange) [Expr]
   | ETry
       { expr :: Expr,

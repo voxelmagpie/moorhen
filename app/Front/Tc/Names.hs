@@ -114,75 +114,77 @@ getImports thisPkgName allAsts ns ast = do
 
   pure $ filter (\(_, ns', _, _) -> ns /= ns') (defaultImports <> xs)
 
+combineQualMaybeAndTName :: Maybe TNameL -> TNameL -> List1 TNameL
+combineQualMaybeAndTName qualMaybe name = case qualMaybe of Just q -> List1 q [name]; _ -> List1 name []
+
 -- Result of looking up a type name in the current namespace
 data TNameLookupResult
   = NlGenericType H.Type -- Generic type parameter
   | NlAstTypeDef Ctx A.TDef -- Type definition in current package
-  | NlAstNamespace Namespace A.Ast ImportsList -- Qualified namespace import
   | NlTypeDef PkgName H.TNameExport -- Type or block
-  | NlNamespace PkgName Namespace -- Qualified namespace import
 
 -- Looks up a type name in the current context and imports
 -- First checks generic parameters, then local definitions, then imports
 -- Returns appropriate Nl* result type or throws error if name not found
+-- Also returns the remaining names if there is a data constructor access
 -- Throws if name lookup is ambiguous
-lookupTypeName :: (MonadTc m) => Ctx -> TNameL -> m TNameLookupResult
-lookupTypeName ctx (name, sr) = do
+lookupTypeName :: (MonadTc m) => Ctx -> List1 TNameL -> m (TNameLookupResult, [TNameL])
+lookupTypeName ctx (List1 (name0, sr) remainingNames) = do
   -- Check generic arguments of current definition
-  case HM.lookup name ctx.tNameToGp of
+  case HM.lookup name0 ctx.tNameToGp of
     Just gp ->
-      pure $ NlGenericType gp.type'
+      pure (NlGenericType gp.type', remainingNames)
     _ -> do
       -- Search definitions in the current file
-      case HM.lookup name ctx.thisAst.tDefs of
+      case HM.lookup name0 ctx.thisAst.tDefs of
         Just tsDef ->
-          pure $ NlAstTypeDef (mkFileCtx' ctx) tsDef
+          pure (NlAstTypeDef (mkFileCtx' ctx) tsDef, remainingNames)
         _ -> do
+          inp <- inputs
+
           -- Search imports
+
           found <- forM ctx.thisAstImports $ \(importPkgName, importNs, qualNameMaybe, names) -> do
-            let doCheck = isImported names (forgetNameType name)
-            inp <- inputs
-            if importPkgName == inp.pkgName
-              then do
-                let (ast, astImports) = must $ HM.lookup importNs ctx.tcIn.allAsts
-                    qualResult = [(importNs, NlAstNamespace importNs ast astImports) | qualNameMaybe == Just name]
-                    ctx' = mkFileCtx importNs (ast, astImports) ctx.tcIn
-                if not doCheck
-                  then
-                    -- The name was not in the names list or was in the hidden names list,
-                    -- no need to search the AST
-                    pure qualResult
-                  else case HM.lookup name ast.tDefs of
-                    Nothing ->
-                      pure qualResult
-                    Just tsDef -> do
-                      pure $ (importNs, NlAstTypeDef ctx' tsDef) : qualResult
-              else do
-                let qualResult = [(importNs, NlNamespace importPkgName importNs) | qualNameMaybe == Just name]
-                importPkg <- getDepPkg importPkgName
-                if not doCheck
-                  then
-                    pure qualResult
-                  else do
-                    fqnMaybe <- lookupTNameInPkg importPkg importNs name
-                    case fqnMaybe of
-                      Nothing -> pure qualResult
-                      Just ex -> pure $ (importNs, NlTypeDef importPkgName ex) : qualResult
+            let go name r =
+                  if importPkgName == inp.pkgName
+                    then do
+                      let (ast, astImports) = must $ HM.lookup importNs inp.allAsts
+                          ctx' = mkFileCtx importNs (ast, astImports) inp
+                      case HM.lookup name ast.tDefs of
+                        Nothing ->
+                          pure []
+                        Just tsDef -> do
+                          pure [((importNs, NlAstTypeDef ctx' tsDef), r)]
+                    else do
+                      importPkg <- getDepPkg importPkgName
+                      fqnMaybe <- lookupTNameInPkg importPkg importNs name
+                      case fqnMaybe of
+                        Nothing -> pure []
+                        Just ex -> pure [((importNs, NlTypeDef importPkgName ex), r)]
+
+            qualResult <-
+              if qualNameMaybe == Just name0
+                then case remainingNames of
+                  (n, _) : ns -> do
+                    go n ns
+                  _ -> throw sr "Expected a type definition or data constructor, got qualified import"
+                else pure []
+
+            let doCheck = isImported names (forgetNameType name0)
+            if doCheck
+              then
+                go name0 remainingNames <&> (qualResult <>)
+              else pure qualResult
 
           case concat found of
-            [] -> throw sr $ "Name not found: " <> un name
-            ((ns, x) : xs) -> do
+            [] -> throw sr $ "Name not found: " <> un name0
+            (((ns, result), remainingNames') : xs) -> do
               -- The name may have been imported multiple times from the same namespace
-              -- This is valid but need to check the name isn't both an imported name and a qualified ('as') name
-              let isSame = \case
-                    (NlAstTypeDef {}, NlAstTypeDef {}) -> True
-                    (NlAstNamespace {}, NlAstNamespace {}) -> True
-                    _ -> False
-              unless (all (\(ns', y) -> ns == ns' && isSame (x, y)) xs)
+              unless (all (\((ns', _), r) -> ns == ns' && r == remainingNames') xs)
                 $ throw sr
                 $ "Ambiguous name: "
-                <> un name
-              pure x
+                <> un name0
+              pure (result, remainingNames')
 
 -- Result of looking up a value name in the current namespace
 data VNameLookupResult
@@ -190,40 +192,12 @@ data VNameLookupResult
   | NlValDef PkgName Namespace VFqn -- Imported value definition
 
 -- Looks up a value name in the current context and imports
--- First checks local definitions, then imports
 -- Returns appropriate Nl* result type or throws error if name not found
 -- Throws if name lookup is ambiguous
-lookupVName :: (MonadTc m) => Ctx -> VNameL -> m VNameLookupResult
-lookupVName ctx (name, sr) = do
-  -- Search definitions in the current file
-  case HM.lookup name ctx.thisAst.vDefs of
-    Just vDef ->
-      pure $ NlAstValDef (mkFileCtx' ctx) vDef
-    _ -> do
-      -- Search imports
-      found <- forM ctx.thisAstImports $ \(importPkgName, importNs, _, names) -> do
-        let doCheck = isImported names (forgetNameType name)
-        inp <- inputs
-        if not doCheck
-          then pure Nothing
-          else
-            if importPkgName == inp.pkgName
-              then do
-                let (ast, imports) = must $ HM.lookup importNs ctx.tcIn.allAsts
-                let defMaybe = HM.lookup name ast.vDefs
-                pure $ case defMaybe of
-                  Just x ->
-                    let d = NlAstValDef (mkFileCtx importNs (ast, imports) ctx.tcIn) x
-                     in Just (importNs, d)
-                  _ -> Nothing
-              else do
-                importPkg <- getDepPkg importPkgName
-                fqnMaybe <- lookupVNameInPkg importPkg importNs name
-                case fqnMaybe of
-                  Nothing -> pure Nothing
-                  Just fqn -> pure $ Just (importNs, NlValDef importPkgName importNs fqn)
-
-      case catMaybes found of
+lookupVName :: (MonadTc m) => Ctx -> Maybe TNameL -> VNameL -> m VNameLookupResult
+lookupVName ctx qualNameMaybe (name, sr) = do
+  let checkForAmbiguity :: (MonadTcError m) => [Maybe (Namespace, a)] -> m a
+      checkForAmbiguity found = case catMaybes found of
         [] -> throw sr $ "Name not found: " <> un name
         ((ns, x) : xs) -> do
           unless (all ((== ns) . fst) xs)
@@ -231,6 +205,51 @@ lookupVName ctx (name, sr) = do
             $ "Ambiguous name: "
             <> un name
           pure x
+
+  let getVNameResultFromNs :: (MonadTc m) => PkgName -> Namespace -> m (Maybe (Namespace, VNameLookupResult))
+      getVNameResultFromNs importPkgName importNs = do
+        inp <- inputs
+        if importPkgName == inp.pkgName
+          then do
+            let (ast, imports) = must $ HM.lookup importNs inp.allAsts
+            let defMaybe = HM.lookup name ast.vDefs
+            pure $ case defMaybe of
+              Just x ->
+                let d = NlAstValDef (mkFileCtx importNs (ast, imports) inp) x
+                 in Just (importNs, d)
+              _ -> Nothing
+          else do
+            importPkg <- getDepPkg importPkgName
+            fqnMaybe <- lookupVNameInPkg importPkg importNs name
+            case fqnMaybe of
+              Nothing -> pure Nothing
+              Just fqn -> pure $ Just (importNs, NlValDef importPkgName importNs fqn)
+
+  case qualNameMaybe of
+    Just (qualName, _) -> do
+      -- Search all imports with matching qualified name
+      found <- forM ctx.thisAstImports $ \(importPkgName, importNs, importQualNameMaybe, _) -> do
+        if importQualNameMaybe == Just qualName
+          then
+            getVNameResultFromNs importPkgName importNs
+          else
+            pure Nothing
+
+      checkForAmbiguity found
+    _ -> do
+      -- Search definitions in the current file
+      case HM.lookup name ctx.thisAst.vDefs of
+        Just vDef ->
+          pure $ NlAstValDef (mkFileCtx' ctx) vDef
+        _ -> do
+          -- Search imports
+          found <- forM ctx.thisAstImports $ \(importPkgName, importNs, _, names) ->
+            if isImported names (forgetNameType name)
+              then getVNameResultFromNs importPkgName importNs
+              else
+                pure Nothing
+
+          checkForAmbiguity found
 
 isImported :: ImportNames -> Name -> Bool
 isImported names name = case names of

@@ -30,16 +30,13 @@ import SrcLoc (SrcRange)
 
 lookupTrait :: (MonadTc m) => Ctx -> [TFqn] -> A.TypeExpr -> m (List1 H.TraitRef, HashSet VName)
 lookupTrait ctx visited = \case
-  (A.TNamed name genArgs, sr) -> do
+  (A.TNamed qualMaybe name genArgs, sr) -> do
     genArgs' <- forM genArgs $ visitTypeExpr ctx
-    lookupTypeName ctx name >>= \case
-      NlAstNamespace {} ->
-        throw sr "Expected trait, got namespace"
-      NlNamespace {} ->
-        throw sr "Expected trait, got namespace"
-      NlGenericType _ ->
+    lookupTypeName ctx (combineQualMaybeAndTName qualMaybe name) >>= \case
+      (NlGenericType _, _) ->
         throw sr "Expected trait, got generic type"
-      NlAstTypeDef traitCtx astTDef -> do
+      (_, _ : _) -> throw sr "Expected trait, got data constructor accessor"
+      (NlAstTypeDef traitCtx astTDef, []) -> do
         let fqn = TFqn $ un traitCtx.namespace <> ":" <> un (fst name)
         unless (length genArgs == length astTDef.genParams) $ throw sr "Wrong number of generic args"
         case astTDef.tDef of
@@ -53,7 +50,7 @@ lookupTrait ctx visited = \case
                   pure (concat $ fst <$> traitsAndNames, mconcat $ snd <$> traitsAndNames)
             pure $ (List1 (fqn, genArgs') depTraits, thisTraitNames <> depNames)
           _ -> throw sr "Expected trait"
-      NlTypeDef _ (H.TNameExport {fqn, typ}) -> do
+      (NlTypeDef _ (H.TNameExport {fqn, typ}), []) -> do
         case typ of
           H.IsTrait (H.Trait {genParams, traits, recursiveNames}) -> do
             unless (length genArgs == length genParams) $ throw sr "Wrong number of generic args"

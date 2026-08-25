@@ -117,8 +117,11 @@ constFoldInlineExpr startingVars exprToOpt = do
         M.ELoadConst x -> pure (expr, Just $ KnownConst x)
         M.EGlobal vFqn -> do
           vDef <- optimiseVDef' (vFqnToPkg vFqn) vFqn
-          let v = case vDef.value of Just x -> KnownConst x; _ -> KnownConst $ M.CFn vFqn
-          pure (expr, Just v)
+          let v = case vDef.value of
+                Just x -> Just $ KnownConst x
+                _ | (case vDef.type' of M.TFunc {} -> True; _ -> False) -> Just $ KnownConst $ M.CFn vFqn
+                _ -> Nothing
+          pure (expr, v)
         M.EUnreachable {} -> pure (expr, Nothing)
         M.EBreak {} -> pure (expr, Nothing)
         M.EContinue {} -> pure (expr, Nothing)

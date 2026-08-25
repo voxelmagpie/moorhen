@@ -1,0 +1,6 @@
+//0
+
+import "#builtins/" as B
+
+let main () : Int
+	B.emptyVec[B.Bool].length()
