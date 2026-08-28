@@ -21,8 +21,13 @@ data BlockCached = BlockCached
     blkFqn :: TFqn,
     blkCtx :: Ctx,
     traits :: H.TraitsList,
-    recursiveNames :: HashSet VName, -- All names from all trait deps
-    wh :: H.WhereClauses
+    -- Names from all trait dependencies and the current trait (not module)
+    namesRecursive :: HashSet VName,
+    wh :: H.WhereClauses,
+    -- Associated types from all trait dependencies and the current trait (not module)
+    -- For traits the type is the TNamed of the associated type
+    -- For modules the type is the actual type of the associated type
+    associatedTypesRecursive :: HashMap TName H.Type
   }
 
 -- Subset of state-manipulating functions available during import preprocessing

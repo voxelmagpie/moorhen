@@ -111,6 +111,10 @@ tFqnToNamespace (TFqn x) = Namespace $ T.takeWhile (/= ':') x
 tFqnToName :: TFqn -> TName
 tFqnToName = un >>> T.takeWhileEnd (/= ':') >>> T.takeWhileEnd (/= '.') >>> TName
 
+-- Look for FQNs of form #pkg/dir/file:Trait.T
+tFqnIsAssociatedType :: TFqn -> Bool
+tFqnIsAssociatedType = un >>> (T.elem '.')
+
 -- VFqn or TFqn
 newtype Fqn = Fqn Text
   deriving (Show, Generic)

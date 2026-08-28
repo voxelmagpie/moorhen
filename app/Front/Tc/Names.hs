@@ -119,7 +119,7 @@ combineQualMaybeAndTName qualMaybe name = case qualMaybe of Just q -> List1 q [n
 
 -- Result of looking up a type name in the current namespace
 data TNameLookupResult
-  = NlGenericType H.Type -- Generic type parameter
+  = NlGenericType H.Type -- Generic type parameter or associated type. Self is not handled
   | NlAstTypeDef Ctx A.TDef -- Type definition in current package
   | NlTypeDef PkgName H.TNameExport -- Type or block
 
@@ -135,56 +135,60 @@ lookupTypeName ctx (List1 (name0, sr) remainingNames) = do
     Just gp ->
       pure (NlGenericType gp.type', remainingNames)
     _ -> do
-      -- Search definitions in the current file
-      case HM.lookup name0 ctx.thisAst.tDefs of
-        Just tsDef ->
-          pure (NlAstTypeDef (mkFileCtx' ctx) tsDef, remainingNames)
-        _ -> do
-          inp <- inputs
+      case (case ctx.modOrTrait of Just mt -> HM.lookup name0 mt.associatedTypes; _ -> Nothing) of
+        Just (_, t) -> pure (NlGenericType t, remainingNames)
+        _ ->
+          do
+            -- Search definitions in the current file
+            case HM.lookup name0 ctx.thisAst.tDefs of
+              Just tsDef ->
+                pure (NlAstTypeDef (mkFileCtx' ctx) tsDef, remainingNames)
+              _ -> do
+                inp <- inputs
 
-          -- Search imports
+                -- Search imports
 
-          found <- forM ctx.thisAstImports $ \(importPkgName, importNs, qualNameMaybe, names) -> do
-            let go name r =
-                  if importPkgName == inp.pkgName
-                    then do
-                      let (ast, astImports) = must $ HM.lookup importNs inp.allAsts
-                          ctx' = mkFileCtx importNs (ast, astImports) inp
-                      case HM.lookup name ast.tDefs of
-                        Nothing ->
-                          pure []
-                        Just tsDef -> do
-                          pure [((importNs, NlAstTypeDef ctx' tsDef), r)]
-                    else do
-                      importPkg <- getDepPkg importPkgName
-                      fqnMaybe <- lookupTNameInPkg importPkg importNs name
-                      case fqnMaybe of
-                        Nothing -> pure []
-                        Just ex -> pure [((importNs, NlTypeDef importPkgName ex), r)]
+                found <- forM ctx.thisAstImports $ \(importPkgName, importNs, qualNameMaybe, names) -> do
+                  let go name r =
+                        if importPkgName == inp.pkgName
+                          then do
+                            let (ast, astImports) = must $ HM.lookup importNs inp.allAsts
+                                ctx' = mkFileCtx importNs (ast, astImports) inp
+                            case HM.lookup name ast.tDefs of
+                              Nothing ->
+                                pure []
+                              Just tsDef -> do
+                                pure [((importNs, NlAstTypeDef ctx' tsDef), r)]
+                          else do
+                            importPkg <- getDepPkg importPkgName
+                            fqnMaybe <- lookupTNameInPkg importPkg importNs name
+                            case fqnMaybe of
+                              Nothing -> pure []
+                              Just ex -> pure [((importNs, NlTypeDef importPkgName ex), r)]
 
-            qualResult <-
-              if qualNameMaybe == Just name0
-                then case remainingNames of
-                  (n, _) : ns -> do
-                    go n ns
-                  _ -> throw sr "Expected a type definition or data constructor, got qualified import"
-                else pure []
+                  qualResult <-
+                    if qualNameMaybe == Just name0
+                      then case remainingNames of
+                        (n, _) : ns -> do
+                          go n ns
+                        _ -> throw sr "Expected a type definition or data constructor, got qualified import"
+                      else pure []
 
-            let doCheck = isImported names (forgetNameType name0)
-            if doCheck
-              then
-                go name0 remainingNames <&> (qualResult <>)
-              else pure qualResult
+                  let doCheck = isImported names (forgetNameType name0)
+                  if doCheck
+                    then
+                      go name0 remainingNames <&> (qualResult <>)
+                    else pure qualResult
 
-          case concat found of
-            [] -> throw sr $ "Name not found: " <> un name0
-            (((ns, result), remainingNames') : xs) -> do
-              -- The name may have been imported multiple times from the same namespace
-              unless (all (\((ns', _), r) -> ns == ns' && r == remainingNames') xs)
-                $ throw sr
-                $ "Ambiguous name: "
-                <> un name0
-              pure (result, remainingNames')
+                case concat found of
+                  [] -> throw sr $ "Name not found: " <> un name0
+                  (((ns, result), remainingNames') : xs) -> do
+                    -- The name may have been imported multiple times from the same namespace
+                    unless (all (\((ns', _), r) -> ns == ns' && r == remainingNames') xs)
+                      $ throw sr
+                      $ "Ambiguous name: "
+                      <> un name0
+                    pure (result, remainingNames')
 
 -- Result of looking up a value name in the current namespace
 data VNameLookupResult
@@ -274,13 +278,13 @@ lookupMembVName ctx (name, _sr) = do
   let thisPkgLookup importNames astTDefs newCtx = case name of
         Left n ->
           flip mapMaybe astTDefs $ \tDef -> case tDef.tDef of
-            A.Module t d _ _
+            A.Module t d _ _ _
               | n `elem` HM.keys d.nameMap && isImported importNames (forgetNameType $ fst tDef.name) ->
                   Just $ NlMembAstValDef newCtx (fst tDef.name) tDef (must $ HM.lookup n d.nameMap) t
             _ -> Nothing
         Right op ->
           flip concatMap astTDefs $ \tDef -> case tDef.tDef of
-            A.Module t d _ _
+            A.Module t d _ _ _
               | op `elem` HM.keys d.opMap && isImported importNames (forgetNameType $ fst tDef.name) ->
                   let vDefs = maybe [] toList (HM.lookup op d.opMap)
                    in vDefs <&> \vDef -> NlMembAstValDef newCtx (fst tDef.name) tDef vDef t

@@ -27,36 +27,102 @@ import Front.TypeKind (TypeKind (MonoType))
 import MhPrelude
 import Names
 import SrcLoc (SrcRange)
+import Vars (MonadVars (..))
 
-lookupTrait :: (MonadTc m) => Ctx -> [TFqn] -> A.TypeExpr -> m (List1 H.TraitRef, HashSet VName)
-lookupTrait ctx visited = \case
-  (A.TNamed qualMaybe name genArgs, sr) -> do
-    genArgs' <- forM genArgs $ visitTypeExpr ctx
-    lookupTypeName ctx (combineQualMaybeAndTName qualMaybe name) >>= \case
-      (NlGenericType _, _) ->
-        throw sr "Expected trait, got generic type"
-      (_, _ : _) -> throw sr "Expected trait, got data constructor accessor"
-      (NlAstTypeDef traitCtx astTDef, []) -> do
-        let fqn = TFqn $ un traitCtx.namespace <> ":" <> un (fst name)
-        unless (length genArgs == length astTDef.genParams) $ throw sr "Wrong number of generic args"
-        case astTDef.tDef of
-          A.Trait vDefs ts _ -> do
-            let thisTraitNames = HM.keysSet vDefs.nameMap
-            (depTraits, depNames) <-
-              if fqn `elem` visited
-                then pure ([], def)
-                else do
-                  traitsAndNames <- forM ts $ \tr -> lookupTrait traitCtx (fqn : visited) tr <&> first toList
-                  pure (concat $ fst <$> traitsAndNames, mconcat $ snd <$> traitsAndNames)
-            pure $ (List1 (fqn, genArgs') depTraits, thisTraitNames <> depNames)
-          _ -> throw sr "Expected trait"
-      (NlTypeDef _ (H.TNameExport {fqn, typ}), []) -> do
-        case typ of
-          H.IsTrait (H.Trait {genParams, traits, recursiveNames}) -> do
-            unless (length genArgs == length genParams) $ throw sr "Wrong number of generic args"
-            pure $ (List1 (fqn, genArgs') $ toList $ un traits, recursiveNames)
-          _ -> throw sr "Expected trait"
-  (_, sr) -> throw sr "Expected trait"
+lookupTraits :: (MonadTc m) => Ctx -> [TFqn] -> [A.TypeExpr] -> m ([H.TraitRef], HashMap TName TFqn, HashSet VName)
+lookupTraits ctx visited' ts = do
+  namesVar <- newVar def
+  assocsVar <- newVar def
+  traitsVar <- newVar def
+  visitedVar <- newVar visited'
+
+  forM_ ts $ \tr -> do
+    lookupTrait' ctx visitedVar traitsVar assocsVar namesVar tr
+
+  names' <- getVar namesVar
+  assocTypes' <- getVar assocsVar
+  traits <- getVar traitsVar
+  pure (traits, assocTypes', names')
+
+lookupTrait' :: (MonadTc m) => Ctx -> Var m [TFqn] -> Var m [H.TraitRef] -> Var m (HashMap TName TFqn) -> Var m (HashSet VName) -> A.TypeExpr -> m ()
+lookupTrait' ctx visitedVar traitsVar assocsVar namesVar typeExpr = do
+  let addToVars depTraits associatedTypesRecursive fqn genArgs' namesRecursive sr = do
+        modVar visitedVar $ (fqn :)
+
+        modVar traitsVar (<> depTraits)
+        modVar traitsVar ((fqn, genArgs') :)
+
+        assocs <- getVar assocsVar
+        forM_ (HM.keys $ HM.intersection associatedTypesRecursive assocs) $ \n' ->
+          throw sr $ "Multiple traits define the associated type " <> un n'
+        setVar assocsVar (assocs <> associatedTypesRecursive)
+
+        names <- getVar namesVar
+        forM_ (HS.intersection namesRecursive names) $ \n' -> throw sr $ "Multiple traits define the name " <> un n'
+        setVar namesVar (names <> namesRecursive)
+
+  case typeExpr of
+    (A.TNamed qualMaybe name genArgs, sr) -> do
+      genArgs' <- forM genArgs $ visitTypeExpr ctx
+      lookupTypeName ctx (combineQualMaybeAndTName qualMaybe name) >>= \case
+        (NlGenericType _, _) ->
+          throw sr "Expected trait, got generic type"
+        (_, _ : _) -> throw sr "Expected trait, got data constructor accessor"
+        (NlAstTypeDef traitCtx astTDef, []) -> do
+          let fqn = TFqn $ un traitCtx.namespace <> ":" <> un (fst name)
+          visited <- getVar visitedVar
+          unless (fqn `elem` visited) $ do
+            unless (length genArgs == length astTDef.genParams) $ throw sr "Wrong number of generic args"
+            case astTDef.tDef of
+              A.Trait vDefs ts _ thisTraitAssocTypes -> do
+                forM_ (toList thisTraitAssocTypes) $ \n'@(n, _) -> do
+                  let fqn' = TFqn $ un fqn <> "." <> un n
+                  let tDef =
+                        H.TDef
+                          { name = n',
+                            fqn = fqn',
+                            genParams = [],
+                            selfType = H.TNamed fqn' [],
+                            typeKind = MonoType,
+                            tDefType = H.IsGenParam
+                          }
+                  addTDef fqn' tDef
+                forM_ ts $ \tr ->
+                  lookupTrait' ctx visitedVar traitsVar assocsVar namesVar tr
+                addToVars
+                  def
+                  ((flip HM.mapWithKey thisTraitAssocTypes $ \n _ -> TFqn $ un fqn <> "." <> un n))
+                  fqn
+                  genArgs'
+                  (HM.keysSet vDefs.nameMap)
+                  sr
+              _ -> throw sr "Expected trait"
+        (NlTypeDef _ (H.TNameExport {fqn, typ}), []) -> do
+          case typ of
+            H.IsTrait (H.Trait {genParams, traits, namesRecursive, associatedTypesRecursive}) -> do
+              visited <- getVar visitedVar
+              unless (fqn `elem` visited) $ do
+                unless (length genArgs == length genParams) $ throw sr "Wrong number of generic args"
+                let associatedTypesRecursive' = associatedTypesRecursive <&> \case H.TNamed f _ -> f; _ -> undefined
+                addToVars (toList traits) associatedTypesRecursive' fqn genArgs' namesRecursive sr
+            _ -> throw sr "Expected trait"
+    (_, sr) -> throw sr "Expected trait"
+
+-- TODO Make return type into a record TraitHeader and cache it?
+lookupTrait :: (MonadTc m) => Ctx -> A.TypeExpr -> m (List1 H.TraitRef, HashMap TName TFqn, HashSet VName)
+lookupTrait ctx typeExpr = do
+  traitsVar <- newVar def
+  namesVar <- newVar def
+  assocsVar <- newVar def
+  visitedVar <- newVar def
+
+  lookupTrait' ctx visitedVar traitsVar assocsVar namesVar typeExpr
+
+  traits <- getVar traitsVar
+  names <- getVar namesVar
+  assocs <- getVar assocsVar
+
+  pure (must $ listToList1 traits, assocs, names)
 
 getTraitMaybe :: (MonadTc m) => Inputs -> TFqn -> m (Maybe H.Trait)
 getTraitMaybe tcIn traitFqn = do
@@ -72,7 +138,7 @@ getTraitMaybe tcIn traitFqn = do
       case tDefMaybe of
         Just tDef ->
           case tDef.tDef of
-            A.Trait x _ _ -> Just <$> visitTrait ctx tDef x.vDefsOrdered x.opMap
+            A.Trait x _ _ _ -> Just <$> visitTrait ctx tDef x.vDefsOrdered x.opMap
             _ -> pure Nothing
         _ -> pure Nothing
     else do
@@ -91,7 +157,7 @@ getTraitMaybe tcIn traitFqn = do
 getTrait :: (MonadTc m) => Inputs -> TFqn -> m H.Trait
 getTrait tcIn traitFqn = getTraitMaybe tcIn traitFqn <&> must
 
--- Visits an impl or trait block declaration
+-- Visits a module or trait
 -- Caches results to avoid reprocessing, resolves generic parameters and 'for'/Self type
 visitBlockDecl :: (MonadTc m) => Ctx -> A.TDef -> m BlockCached
 visitBlockDecl outerCtx blkTDef = do
@@ -111,14 +177,14 @@ visitBlockDecl outerCtx blkTDef = do
               }
 
       (selfType, traits, wh) <- case blkTDef.tDef of
-        A.Module t _ ts astWh -> do
+        A.Module t _ ts astWh _ -> do
           t' <- visitTypeExpr ctxWithGenParams t
           let k = getTypeKind t'
           unless (k == MonoType) $ throw t $ "Type must be a monotype, not " <> T.toLower (tShow k)
           wh <- visitWhereClauses ctxWithGenParams astWh
           pure (t', ts, wh)
-        A.Trait _ ts astWh -> do
-          let fqn = TFqn $ un blkFqn <> "." <> "Self"
+        A.Trait _ ts astWh _ -> do
+          let fqn = TFqn $ un blkFqn <> "$Self"
           let selfType = H.TNamed fqn []
           let tDef =
                 H.TDef
@@ -134,10 +200,8 @@ visitBlockDecl outerCtx blkTDef = do
           pure (selfType, ts, wh)
         _ -> error "Not a trait"
 
-      traitsAndNames <- forM traits $ \tr -> lookupTrait ctxWithGenParams [blkFqn] tr <&> first toList
-
-      let traits' = concat $ fst <$> traitsAndNames
-      let names = mconcat $ snd <$> traitsAndNames
+      (traits', assocTypesFromTraitDeps, namesFromTraitDeps) <-
+        lookupTraits ctxWithGenParams [blkFqn] traits
 
       let traitMap = HM.fromListWith (<>) $ traits' <&> \(fqn, ts) -> (fqn, [ts])
       forM_ (HM.toList traitMap) $ \(fqn, tss) ->
@@ -147,7 +211,49 @@ visitBlockDecl outerCtx blkTDef = do
             unless (all (== t0) ts)
               $ throw blkTDef.name ("The trait " <> un (tFqnToName fqn) <> " is included multiple times")
 
-      let blkCtx = ctxWithGenParams {block = Just (name, selfType), blockWhereClauses = wh}
+      (associatedTypesRecursive, associatedTypes) <- case blkTDef.tDef of
+        A.Module _ _ _ _ assocTypes -> do
+          forM_ (toList assocTypes) $ \(n, (sr, _)) -> do
+            unless (HM.member n assocTypesFromTraitDeps)
+              $ throw sr
+              $ "Associated type "
+              <> un n
+              <> " not found in any required trait"
+
+          let blkCtx = ctxWithGenParams {modOrTrait = Nothing, blockWhereClauses = wh}
+          associatedTypes' <- forM assocTypes $ \(_, e) -> visitTypeExpr blkCtx e
+
+          withFqn <- flip HM.traverseWithKey associatedTypes' $ \n t -> do
+            fqn <- case HM.lookup n assocTypesFromTraitDeps of
+              Just fqn -> do
+                pure fqn
+              _ -> throw blkTDef.name $ "Missing associated type: " <> un n
+            pure (fqn, t)
+
+          pure (associatedTypes', withFqn)
+        A.Trait _ _ _ assocTypes -> do
+          forM_ (HM.keys assocTypes) $ \n ->
+            when (HM.member n assocTypesFromTraitDeps) $ throw blkTDef.name $ "Duplicate associated type " <> un n
+          let assocTypesFromTraitDeps' = assocTypesFromTraitDeps <&> \f -> (f, H.TNamed f [])
+          -- TDefs created in lookupTrait
+          let assocTypesFromThisTrait = flip HM.mapWithKey assocTypes $ \n _ ->
+                let f = TFqn $ un blkFqn <> "." <> un n
+                 in (f, H.TNamed f [])
+          let assocTypesAll = assocTypesFromTraitDeps' <> assocTypesFromThisTrait
+          let withoutFqn = assocTypesAll <&> snd
+          pure (withoutFqn, assocTypesAll)
+        _ -> undefined
+
+      namesRecursive <- case blkTDef.tDef of
+        A.Module {} -> pure namesFromTraitDeps -- Names could be new or implementation of a trait def
+        A.Trait (A.BlockInner {nameMap}) _ _ _ -> do
+          forM_ (HM.keys nameMap) $ \n ->
+            when (HS.member n namesFromTraitDeps) $ throw blkTDef.name $ "Duplicate name " <> un n
+          pure $ namesFromTraitDeps <> HM.keysSet nameMap
+        _ -> undefined
+
+      let ctxModTrait = CtxModOrTrait {name, selfType, associatedTypes}
+      let blkCtx = ctxWithGenParams {modOrTrait = Just ctxModTrait, blockWhereClauses = wh}
 
       let x =
             BlockCached
@@ -156,8 +262,9 @@ visitBlockDecl outerCtx blkTDef = do
                 blkFqn,
                 blkCtx,
                 traits = traitsListFromList traits',
-                recursiveNames = names,
-                wh
+                namesRecursive,
+                wh,
+                associatedTypesRecursive
               }
       addBlockDeclCache outerCtx.namespace name x
 
@@ -275,7 +382,8 @@ visitTrait :: (MonadTc m) => Ctx -> A.TDef -> [A.VDef] -> HashMap OpName (List1 
 visitTrait outerCtx tDef vDefs opMap = do
   assertM $ case tDef.tDef of A.Trait {} -> True; _ -> False
 
-  BlockCached {genParams, selfType, blkFqn, blkCtx, traits, recursiveNames, wh} <- visitBlockDecl outerCtx tDef
+  BlockCached {genParams, selfType, blkFqn, blkCtx, traits, namesRecursive, wh, associatedTypesRecursive} <-
+    visitBlockDecl outerCtx tDef
 
   vDefs' <- forM vDefs $ \astVDef -> do
     (_, vDef) <- visitVDef blkCtx astVDef wh
@@ -314,7 +422,8 @@ visitTrait outerCtx tDef vDefs opMap = do
             ops = opMap <&> (<&> ((.name) >>> fst)),
             traits,
             whereClauses = wh,
-            recursiveNames
+            namesRecursive,
+            associatedTypesRecursive
           }
   -- TODO Cache
   pure blk

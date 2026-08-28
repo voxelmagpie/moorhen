@@ -85,10 +85,11 @@ typeCheckPackage' = do
         A.BuiltinTypeDecl -> do
           (fqn, _) <- visitTDef outerCtx tDef
           modVar tExports ((fst tDef.name, H.TNameExport fqn H.IsTypeDef) :)
-        A.Module _ vDefs _ _ -> do
-          BlockCached {genParams, selfType, blkFqn, traits, recursiveNames, wh} <- visitBlockDecl outerCtx tDef
+        A.Module _ vDefs _ _ _ -> do
+          BlockCached {genParams, selfType, blkFqn, traits, namesRecursive, wh, associatedTypesRecursive} <-
+            visitBlockDecl outerCtx tDef
 
-          forM_ recursiveNames $ \n ->
+          forM_ namesRecursive $ \n ->
             unless (n `elem` (vDefs.nameMap <&> fst . (.name)))
               $ throw tDef.name
               $ "Missing implementation for trait definition '"
@@ -97,17 +98,19 @@ typeCheckPackage' = do
 
           let mod =
                 H.Module
-                  genParams
-                  (fst tDef.name)
-                  blkFqn
-                  selfType
-                  (HM.keys vDefs.nameMap)
-                  (vDefs.opMap <&> (<&> ((.name) >>> fst)))
-                  traits
-                  wh
+                  { genParams,
+                    name = (fst tDef.name),
+                    fqn = blkFqn,
+                    forType = selfType,
+                    vDefNames = (HM.keys vDefs.nameMap),
+                    ops = (vDefs.opMap <&> (<&> ((.name) >>> fst))),
+                    traits,
+                    whereClauses = wh,
+                    associatedTypes = associatedTypesRecursive
+                  }
           modVar tExports ((fst tDef.name, H.TNameExport blkFqn $ H.IsModule mod) :)
           modVar allModules (mod :)
-        A.Trait d _ _ -> do
+        A.Trait d _ _ _ -> do
           _ <- visitTDef outerCtx tDef
           trait <- visitTrait outerCtx tDef d.vDefsOrdered d.opMap
           modVar tExports ((fst tDef.name, H.TNameExport trait.fqn $ H.IsTrait trait) :)
@@ -144,7 +147,7 @@ typeCheckPackage' = do
         A.TypeAliasDecl _ -> pure ()
         A.BuiltinTypeDecl -> pure ()
         A.Trait {} -> pure ()
-        A.Module _ vDefs _ _ -> do
+        A.Module _ vDefs _ _ _ -> do
           BlockCached {selfType, blkCtx, wh} <- visitBlockDecl outerCtx tDef
 
           fields <- getFieldsFromType selfType
@@ -164,12 +167,13 @@ typeCheckPackage' = do
                 _ -> throw vDef.name "Module functions must take a self parameter"
               _ -> throw vDef.name "Module members must be functions"
 
-            let tNameToGp = HM.fromList $ zip ((snd >>> fst) <$> (tDef.genParams <> astVDef.genParams)) vDef.genParams
+            -- VDef includes the module generics
+            let tNameToGp = HM.fromList (zip ((snd >>> fst) <$> (tDef.genParams <> astVDef.genParams)) vDef.genParams)
+
             let ctx =
                   blkCtx
                     { fqn = Just $ Left vFqn,
                       genParams = vDef.genParams, -- Already includes module generic parameters
-                      blockWhereClauses = wh,
                       vDefWhereClauses = vDef.whereClauses,
                       tNameToGp,
                       thisDefType = Just vDef.type'

@@ -62,9 +62,13 @@ data TDef'
   = TypeAliasDecl TypeExpr -- type T = ...
   | TypeDecl (List1 DataCons) [(Text, SrcRange)] -- data T = A | B C deriving ...
   | BuiltinTypeDecl -- builtin Vec [T]
-  | Module TypeExpr BlockInner [TypeExpr] WhereClauses
-  | Trait BlockInner [TypeExpr] WhereClauses
+  | Module TypeExpr BlockInner [TypeExpr] WhereClauses AssociatedTypesValues
+  | Trait BlockInner [TypeExpr] WhereClauses AssociatedTypes
   deriving (Show, Generic, Eq)
+
+type AssociatedTypes = HashMap TName SrcRange
+
+type AssociatedTypesValues = HashMap TName (SrcRange, TypeExpr)
 
 data ADataCons = ADataCons {typeName :: TName, name :: TName}
   deriving (Show, Generic, Eq)

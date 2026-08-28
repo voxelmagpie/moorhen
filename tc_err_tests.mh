@@ -336,3 +336,13 @@ let main () : Int
 // --- //
 
 let x : Int = Int(3)
+
+// --- //
+
+trait Tr
+	type T
+	let f (Self) : T
+
+let g (x : Tr) : Int
+	let y = x.f() // What is T?
+	0

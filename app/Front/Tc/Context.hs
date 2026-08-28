@@ -10,21 +10,31 @@ import Front.Tc.Inputs
 import MhPrelude
 import Names
 
+data CtxModOrTrait = CtxModOrTrait
+  { name :: TName,
+    selfType :: H.Type,
+    associatedTypes :: HashMap TName (TFqn, H.Type)
+  }
+
 data Ctx = Ctx
   { namespace :: Namespace,
     thisAst :: A.Ast,
     thisAstImports :: ImportsList,
     tcIn :: Inputs,
+    --
     -- Fields below this are only set when type checking within a definition
     -- E.g. Record fields, expressions
-    block :: Maybe (TName, H.Type), -- Type is for/Self, may be module or trait
+    --
+    modOrTrait :: Maybe CtxModOrTrait,
     fqn :: Maybe (Either VFqn TFqn),
     tNameToGp :: HashMap TName H.GenParam,
     genParams :: [H.GenParam],
     blockWhereClauses :: H.WhereClauses,
     vDefWhereClauses :: H.WhereClauses,
     thisDefType :: Maybe H.Type,
+    --
     -- Fields below are only set when type checking an expression
+    --
     variables :: [Variable],
     closureDepth :: Int,
     inLoop :: Maybe H.LocalVarUid
@@ -50,7 +60,7 @@ mkFileCtx namespace (thisAst, thisAstImports) tcIn =
       thisAst = thisAst,
       thisAstImports = thisAstImports,
       tcIn = tcIn,
-      block = def,
+      modOrTrait = def,
       fqn = def,
       tNameToGp = def,
       genParams = def,

@@ -15,7 +15,7 @@ import Data.Text qualified as T
 import Error (ErrorSeverity (SevWarning))
 import Front.Ast qualified as A
 import Front.Hir qualified as H
-import Front.HirFns (isGenericOverEffect, typeContainsFqn, typeToText)
+import Front.HirFns (isGenericOverEffect, typeContainsFqn, typeContainsFqnMatch, typeToText)
 import Front.Tc.Context
 import Front.Tc.Error (MonadTcError (addError, throw))
 import Front.Tc.Generics
@@ -685,6 +685,10 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
                     $ throw sr
                     $ "Function is not usable through a trait type as "
                     <> "it uses the Self type in a place other than the first parameter"
+
+                  when (typeContainsFqnMatch vDef.vDef.type' tFqnIsAssociatedType)
+                    $ throw sr
+                    $ "Function is not usable through a trait type as it uses associated types"
                 _ -> pure () -- Non-function or 0-arg function type will be caught later
             _ -> pure ()
 

@@ -1,0 +1,8 @@
+//1
+
+mod M for Int
+	let f (x : Self) : Self
+		x + 1
+
+let main () : Int
+	0.f()

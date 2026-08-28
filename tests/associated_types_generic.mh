@@ -1,0 +1,25 @@
+//7
+
+
+trait Tr
+	type T
+	let getVal (Self) : T
+	let applyVal (Self, T) : Self
+
+
+mod M for Int : Tr
+	type T = Int
+	let getVal (self)
+		self / 2
+	let applyVal (self, x)
+		self + x
+
+
+let getAndApply [A] (x : A) : A where A : Tr
+	let a = x.getVal()
+	x.applyVal(a)
+
+
+
+let main () : Int
+	getAndApply(5)

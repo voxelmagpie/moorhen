@@ -56,14 +56,16 @@ ppTDef tDef =
           where
             ds' = if null ds then "" else "\n\tderiving " <> T.intercalate "," (ds <&> \x -> "\"" <> fst x <> "\"")
         BuiltinTypeDecl -> T.concat ["builtin ", genericStr, un $ fst tDef.name]
-        Module t defs sigList wh -> T.concat ["mod ", genericStr, un $ fst tDef.name, " for ", ppType t, sigList', ppWheres wh, "\n", defs', "\n"]
+        Module t defs sigList wh assocTypes -> T.concat ["mod ", genericStr, un $ fst tDef.name, " for ", ppType t, sigList', ppWheres wh, "\n", assocTypes', defs', "\n"]
           where
             defs' = T.unlines $ toList defs.vDefsOrdered <&> (ppVDef >>> ("\t" <>))
             sigList' = if null sigList then "" else " : " <> T.intercalate ", " (ppType <$> sigList)
-        Trait defs sigList wh -> T.concat ["trait ", genericStr, un $ fst tDef.name, sigList', ppWheres wh, "\n", defs', "\n"]
+            assocTypes' = T.unlines $ sortOn (un . fst) (HM.toList assocTypes) <&> \(n, (_, t')) -> "\ttype " <> un n <> " = " <> ppType t'
+        Trait defs sigList wh assocTypes -> T.concat ["trait ", genericStr, un $ fst tDef.name, sigList', ppWheres wh, "\n", assocTypes', defs', "\n"]
           where
             defs' = T.unlines $ toList defs.vDefsOrdered <&> (ppVDef >>> ("\t" <>))
             sigList' = if null sigList then "" else " : " <> T.intercalate ", " (ppType <$> sigList)
+            assocTypes' = T.unlines $ sortOn un (HM.keys assocTypes) <&> \n -> "\ttype " <> un n
 
 ppDataCons :: DataCons -> Text
 ppDataCons (DataCons name contents) = unwords [un (fst name), ppDataConsContents contents]

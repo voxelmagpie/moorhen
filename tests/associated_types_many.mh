@@ -1,0 +1,35 @@
+//8
+
+
+trait Tr0
+	type T0
+	let f0 (Self, T0) : T0
+
+trait Tr1 : Tr0
+	type T1
+	let f1 (Self, T1) : T1
+
+trait Tr2
+	type T2
+	let f2 (Self, T2) : T2
+
+trait Tr3 : Tr2
+	type T3
+	let f3 (Self, T3) : T3
+
+
+mod M for Int : Tr1, Tr2, Tr3
+	type T0 = Int
+	type T1 = Int
+	type T2 = Int
+	type T3 = Int
+	let f0 (self, y) -> self + y
+	let f1 (self, y) -> self + y
+	let f2 (self, y) -> self + y
+	let f3 (self, y) -> self + y
+
+
+
+
+let main () : Real
+	5.f0(1).f1(2)

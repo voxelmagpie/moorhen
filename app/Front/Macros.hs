@@ -131,7 +131,7 @@ generateEqMod tDef dataConss sr = do
   let eqTrait = (A.TNamed Nothing (TName "Eq", sr) [], sr)
 
   let whereClauses = tDef.genParams <&> \(_, (n, _)) -> ((A.TNamed Nothing (n, sr) [], sr), (A.TNamed Nothing (TName "Eq", sr) [], sr))
-  let mod = A.Module forType vDefs [eqTrait] whereClauses
+  let mod = A.Module forType vDefs [eqTrait] whereClauses def
   let modName = TName $ un name <> "Eq"
   pure $ A.TDef {name = (modName, sr), genParams = tDef.genParams, isEffect = False, tDef = mod}
 
@@ -192,6 +192,6 @@ generateShowMod tDef dataConss sr = do
 
   let showTrait = (A.TNamed Nothing (TName "Show", sr) [], sr)
   let whereClauses = tDef.genParams <&> \(_, (n, _)) -> ((A.TNamed Nothing (n, sr) [], sr), (A.TNamed Nothing (TName "Show", sr) [], sr))
-  let mod = A.Module forType vDefs [showTrait] whereClauses
+  let mod = A.Module forType vDefs [showTrait] whereClauses def
   let modName = TName $ un name <> "Show"
   pure $ A.TDef {name = (modName, sr), genParams = tDef.genParams, isEffect = False, tDef = mod}

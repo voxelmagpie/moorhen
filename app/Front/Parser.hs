@@ -9,13 +9,13 @@ module Front.Parser (parseMoorhenAst, parseMoorhenExpr) where
 
 import Control.Exception (throwIO)
 import Control.Exception qualified as CEx
-import Control.Monad (forM_, unless, void, when)
+import Control.Monad (forM, forM_, unless, void, when)
 import Data.Functor (($>))
 import Data.HashMap.Strict qualified as HM
 import Data.Int (Int64)
 import Data.List (foldl1, isPrefixOf)
 import Data.List qualified as List
-import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Maybe (fromMaybe, isJust, isNothing, mapMaybe)
 import Data.Text qualified as T
 import Error
 import Front.Ast qualified as A
@@ -555,11 +555,17 @@ modDef = do
   _ <- kw KwFor
   forTypeExpr <- typeExpr
 
-  (traits, vDefsOrdered, nameMap, opMap, wh) <- parseTraitsWhsInner
+  (traits, vDefsOrdered, nameMap, opMap, wh, assocTypes) <- parseTraitsWhsInner
   let vDefs = A.BlockInner {vDefsOrdered, nameMap, opMap}
 
-  let tDef = A.TDef {name, genParams, isEffect = False, tDef = A.Module forTypeExpr vDefs traits wh}
-  pure tDef
+  assocTypes' <- forM (toList assocTypes) $ \(n, (sr, typeExprMaybe)) -> do
+    case typeExprMaybe of
+      Just e -> pure (n, (sr, e))
+      _ -> throw sr "Expected type expression"
+
+  let tDef = A.Module forTypeExpr vDefs traits wh (HM.fromList assocTypes')
+
+  pure $ A.TDef {name, genParams, isEffect = False, tDef}
 
 traitDef :: (Args) => IO A.TDef
 traitDef = do
@@ -567,14 +573,26 @@ traitDef = do
   name <- tName
   genParams <- parseGenParamsMaybe
 
-  (traits, vDefsOrdered, nameMap, opMap, wh) <- parseTraitsWhsInner
+  (traits, vDefsOrdered, nameMap, opMap, wh, assocTypes) <- parseTraitsWhsInner
   let vDefs = A.BlockInner {vDefsOrdered, nameMap, opMap}
 
-  let tDef = A.TDef {name, genParams, isEffect = False, tDef = A.Trait vDefs traits wh}
+  assocTypes' <- forM (toList assocTypes) $ \(n, (sr, typeExprMaybe)) -> do
+    when (isJust typeExprMaybe) $ throw sr "Unexpected type expression"
+    pure (n, sr)
+
+  let tDef = A.TDef {name, genParams, isEffect = False, tDef = A.Trait vDefs traits wh (HM.fromList assocTypes')}
   pure tDef
 
 parseTraitsWhsInner ::
-  (Args) => IO ([A.TypeExpr], [A.VDef], HashMap VName A.VDef, HashMap OpName (List1 A.VDef), A.WhereClauses)
+  (Args) =>
+  IO
+    ( [A.TypeExpr],
+      [A.VDef],
+      HashMap VName A.VDef,
+      HashMap OpName (List1 A.VDef),
+      A.WhereClauses,
+      HashMap TName (SrcRange, Maybe A.TypeExpr)
+    )
 parseTraitsWhsInner = do
   traits <- opt (PredSym ":") (symbol ":" *> list1 typeExpr (PredSym ",")) <&> maybe [] toList
 
@@ -583,26 +601,47 @@ parseTraitsWhsInner = do
 
   _ <- indent
 
-  defs <- many (PredNot $ PredTk Outdent) (letDef <* newline)
+  defs <-
+    many (PredNot $ PredTk Outdent)
+      $ oneOf
+        [ (PredKw KwLet, ((Left <$> letDef) <* newline)),
+          (PredKw KwType, ((Right <$> assocType) <* newline))
+        ]
 
   _ <- outdent
 
   namesMap <- newVar def
   opsMap <- newVar def
   vDefsRev <- newVar []
-  forM_ (zip [0 ..] defs) $ \(idx, vDef'@(A.VDef {A.name = (name', sr), A.op = opMaybe})) -> do
+
+  forM_ (zip [0 ..] (mapMaybe getLeft defs)) $ \(idx, vDef'@(A.VDef {A.name = (name', sr), A.op = opMaybe})) -> do
     xs <- getVar namesMap
-    when (name' `elem` HM.keys xs) $ throw sr "Duplicate name"
+    when (HM.member name' xs) $ throw sr "Duplicate name"
     let vDef = vDef' {A.idx}
     modVar namesMap $ HM.insert name' $ vDef
     modVar vDefsRev (vDef :)
     forM_ opMaybe $ \(op, _) ->
       modVar opsMap $ HM.insertWith (<>) op (List1 vDef [])
 
+  assocTypes <- newVar $ HM.empty
+
+  forM_ (mapMaybe getRight defs) $ \(name, x@(sr, _)) -> do
+    assocTypes' <- getVar assocTypes
+    when (HM.member name assocTypes') $ throw sr "Duplicate associated type name"
+    modVar assocTypes $ HM.insert name x
+
   namesMap' <- getVar namesMap
   opsList' <- getVar opsMap
   vDefsOrdered <- getVar vDefsRev <&> reverse
-  pure (traits, vDefsOrdered, namesMap', opsList', wh)
+  assocTypes' <- getVar assocTypes
+  pure (traits, vDefsOrdered, namesMap', opsList', wh, assocTypes')
+
+assocType :: (Args) => IO (TName, (SrcRange, Maybe A.TypeExpr))
+assocType = do
+  _ <- kw KwType
+  (name, nameSr) <- tName
+  exprMaybe <- opt (PredSym "=") $ symbol "=" *> typeExpr
+  pure (name, (nameSr, exprMaybe))
 
 whereClause :: (Args) => IO (A.TypeExpr, A.TypeExpr)
 whereClause = do

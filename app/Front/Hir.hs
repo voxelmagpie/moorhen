@@ -92,7 +92,8 @@ data Module = Module
     vDefNames :: [VName],
     ops :: HashMap OpName (List1 VName),
     traits :: TraitsList,
-    whereClauses :: WhereClauses
+    whereClauses :: WhereClauses,
+    associatedTypes :: HashMap TName Type
   }
   deriving (Show, Generic, Eq)
 
@@ -106,7 +107,8 @@ data Trait = Trait
     ops :: HashMap OpName (List1 VName),
     traits :: TraitsList,
     whereClauses :: WhereClauses,
-    recursiveNames :: HashSet VName -- All Definition names, including names from dependency traits
+    namesRecursive :: HashSet VName, -- All Definition names, including from dependency traits
+    associatedTypesRecursive :: HashMap TName Type -- All associated types, including from dependency traits
   }
   deriving (Show, Generic, Eq)
 
@@ -137,7 +139,7 @@ data TDef = TDef
 data TDefType
   = IsDataDef
   | IsBuiltin
-  | IsGenParam -- or 'for'/Self type
+  | IsGenParam -- or Self type or associated type
   | IsAlias
   | IsTrait'
   deriving (Show, Generic, Eq)

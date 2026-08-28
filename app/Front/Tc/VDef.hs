@@ -31,18 +31,21 @@ visitVDef outerCtx astVDef implsWheres = do
   let name = fst astVDef.name
   let fqn =
         VFqn
-          (un outerCtx.namespace <> ":" <> (case outerCtx.block of Just (n, _) -> un n <> "."; _ -> "") <> un name)
+          $ un outerCtx.namespace
+          <> ":"
+          <> (case outerCtx.modOrTrait of Just (CtxModOrTrait {name = n}) -> un n <> "."; _ -> "")
+          <> un name
   (_, thisPkg) <- getThisPkg
   getVDefMaybe thisPkg fqn >>= \case
     Just x ->
       pure (fqn, x)
     _ -> do
-      when (isNothing astVDef.typeExpr && isNothing outerCtx.block)
+      when (isNothing astVDef.typeExpr && isNothing outerCtx.modOrTrait)
         $ throw astVDef.name "Missing type specifier"
 
       traitInfoMaybe <- do
-        case outerCtx.block of
-          Just (blkName, forType) -> do
+        case outerCtx.modOrTrait of
+          Just (CtxModOrTrait {name = blkName, selfType, associatedTypes}) -> do
             BlockCached {traits} <- getBlockDeclMaybe outerCtx.namespace blkName <&> must
             xs <- forM (toList traits) $ \(traitFqn, traitGenArgs) -> do
               trait <- getTrait outerCtx.tcIn traitFqn
@@ -51,7 +54,7 @@ visitVDef outerCtx astVDef implsWheres = do
                 Nothing -> pure Nothing
             case catMaybes xs of
               [] -> pure Nothing
-              [x] -> pure $ Just (x, forType)
+              [x] -> pure $ Just (x, selfType, associatedTypes)
               _ -> throw astVDef.name $ "Multiple traits define the definition '" <> un (fst astVDef.name) <> "'"
           _ -> pure Nothing
 
@@ -68,7 +71,8 @@ visitVDef outerCtx astVDef implsWheres = do
                 outerCtx
                   { fqn = Just $ Left fqn,
                     genParams = gp,
-                    tNameToGp = HM.union outerCtx.tNameToGp $ HM.fromList $ zip ((snd >>> fst) <$> astVDef.genParams) newGp,
+                    tNameToGp =
+                      HM.union outerCtx.tNameToGp $ HM.fromList $ zip ((snd >>> fst) <$> astVDef.genParams) newGp,
                     thisDefType = Nothing
                   }
 
@@ -80,7 +84,7 @@ visitVDef outerCtx astVDef implsWheres = do
           let d = H.VDef astVDef.name astVDef.op fqn gp implsWheres wh t
           addVDef fqn d
           pure (fqn, d)
-        Just ((trait, concreteTypes, vDef), forType) -> do
+        Just ((trait, concreteTypes, vDef), selfType, associatedTypes) -> do
           when (isJust astVDef.typeExpr || notNull astVDef.genParams || notNull astVDef.whereClauses)
             $ throw astVDef.name
             $ "Implementations of trait definitions may not specify generic parameters or types\n"
@@ -89,9 +93,11 @@ visitVDef outerCtx astVDef implsWheres = do
           newGp <- mkGenParams (Fqn $ un fqn) $ vDef.genParams <&> \gp -> (gp.kind, (tFqnToName gp.fqn, gp.sr))
 
           let selfFqn = case trait.selfType.type' of H.TNamed x _ -> x; _ -> undefined
+          let assocTypesMap = HM.elems associatedTypes
           let gpMap =
-                (selfFqn, forType)
-                  : zip (trait.genParams <&> (.fqn)) concreteTypes
+                (selfFqn, selfType)
+                  : assocTypesMap
+                    <> zip (trait.genParams <&> (.fqn)) concreteTypes
                     <> zip (vDef.genParams <&> (.fqn)) (newGp <&> (.type'))
           let sub = substituteGenerics gpMap
           let t = sub vDef.vDef.type'
@@ -116,7 +122,7 @@ visitWhereClauses ctx astWhereClauses = do
   whVar <- newVar (def :: H.WhereClauses)
   forM_ astWhereClauses $ \(typeExpr, traitExpr) -> do
     t' <- visitTypeExpr ctx typeExpr
-    (traits, _) <- lookupTrait ctx [] traitExpr
+    (traits, _, _) <- lookupTrait ctx traitExpr
     forM_ traits $ \tr ->
       modVar whVar $ addTraitToWhereClauses t' tr
   getVar whVar

@@ -82,10 +82,13 @@ traitRefToText (fqn, gArgs) =
     gArgs' = gArgs <&> typeToText
 
 typeContainsFqn :: Type -> TFqn -> Bool
-typeContainsFqn outer search = case outer of
+typeContainsFqn outer search = typeContainsFqnMatch outer (== search)
+
+typeContainsFqnMatch :: Type -> (TFqn -> Bool) -> Bool
+typeContainsFqnMatch outer search = case outer of
   TFunc {params, ret, eff} ->
-    typeContainsFqn eff search || typeContainsFqn ret search || any (`typeContainsFqn` search) params
-  TTuple xs -> any (`typeContainsFqn` search) xs
-  TNamed fqn genArgs -> fqn == search || any (`typeContainsFqn` search) genArgs
-  TEffect xs -> any (`typeContainsFqn` search) xs
+    typeContainsFqnMatch eff search || typeContainsFqnMatch ret search || any (`typeContainsFqnMatch` search) params
+  TTuple xs -> any (`typeContainsFqnMatch` search) xs
+  TNamed fqn genArgs -> (search fqn) || any (`typeContainsFqnMatch` search) genArgs
+  TEffect xs -> any (`typeContainsFqnMatch` search) xs
   TLifetime {} -> False

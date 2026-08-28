@@ -95,7 +95,7 @@ typeContainsMutVarsEffect = \case
 -- Visits a type definition or type alias
 visitTDef :: (MonadTc m) => Ctx -> A.TDef -> m (TFqn, H.TDef)
 visitTDef outerCtx astTDef = do
-  assertM $ isNothing outerCtx.block
+  assertM $ isNothing outerCtx.modOrTrait
   assertM $ null outerCtx.genParams
 
   let name = fst astTDef.name
@@ -197,9 +197,9 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
     pure $ H.TEffect $ HS.fromList $ concat es
   A.TNamed Nothing (TName "Self", _) genArgs -> do
     unless (null genArgs) $ throw sr "Self type does not take generic arguments"
-    case ctx.block of
-      Just (_, selfType) -> pure selfType
-      _ -> throw sr "Self type is only valid within impl or trait blocks"
+    case ctx.modOrTrait of
+      Just (CtxModOrTrait {selfType}) -> pure selfType
+      _ -> throw sr "Self type is only valid within modules or traits"
   A.TNamed qualMaybe name genArgs -> do
     genArgs' <- forM genArgs $ visitTypeExpr ctx
     lookupTypeName ctx (combineQualMaybeAndTName qualMaybe name) >>= \case
