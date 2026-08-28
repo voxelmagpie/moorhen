@@ -222,8 +222,6 @@ inlinableFunctionOperators =
           ("IntBuiltins.add", "+"),
           ("IntBuiltins.sub", "-"),
           ("IntBuiltins.mul", "*"),
-          ("IntBuiltins.div", "/"),
-          ("IntBuiltins.rem", "%"),
           ("IntBuiltins.eq", "=="),
           ("IntBuiltins.neq", "!="),
           ("I32Builtins.eq", "=="),
