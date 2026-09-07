@@ -222,3 +222,5 @@ let randomI32 : \ -> I32 @Impure
 
 let getTimeMs : \ -> Real @Impure
 
+
+let getArgs : \ -> Vec[String]

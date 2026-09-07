@@ -208,7 +208,7 @@ async function $0builtins$1$2buildVecRev$4async(l, f) {
 // The builtin readline module does not work when stdin is coming from a non-terminal source
 // such as a chess GUI or piped in from cat
 
-import { stdin } from 'process';
+import { stdin, argv } from 'process';
 var lines = [];
 
 async function $0builtins$1$2readLine() {
@@ -263,5 +263,10 @@ function $0builtins$1$2randomI32() {
 }
 
 function $0builtins$1$2getTimeMs() {
-    return (new Date()).getTime();
+    return performance.now();
 }
+
+function $0builtins$1$2getArgs() {
+    return argv;
+}
+

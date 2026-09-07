@@ -1,4 +1,5 @@
 import "maybe" (..)
+import "iter" (..)
 
 mod VecFns [A] for Vec[A]
 	let iter (xs : Self) : Iter[A]
@@ -28,3 +29,15 @@ mod VecFns [A] for Vec[A]
 
 	let reverse (xs : Vec[A]) : Vec[A]
 		buildVec(xs.length(), \i -> xs.atOrPanic(xs.length() - i - 1))
+
+mod VecShow [A] for Vec[A] : Show where A : Show
+	let show (xs)
+		let mut s = "["
+
+		foreach (i, x) in xs.iter().enum()
+			if i > 0
+				set s = s ++ ", "
+			set s = s ++ x.show()
+
+		set s = s ++ "]"
+		s

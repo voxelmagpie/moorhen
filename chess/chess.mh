@@ -166,12 +166,18 @@ mod BoardFns for Board
 #deriving("Eq", "Show")
 data Side = QueenSide | KingSide
 
-#deriving("Eq", "Show")
+#deriving("Eq")
 data Tile { file : Int, rank : Int }
 
-mod TileFns for Tile
+mod TileFns for Tile : Show
 	let isValid (tile : Tile) : Bool
 		tile.rank >= 0 and tile.rank < 8 and tile.file >= 0 and tile.file < 8
+
+	let show (self)
+		let file = CodePoint(self.file as I32 + "a".ord().0).show()
+		let rank = CodePoint(self.rank as I32 + "1".ord().0).show()
+
+		file ++ rank
 
 #deriving("Eq", "Show")
 data CastlingRights { kingSide : Bool, queenSide : Bool }
@@ -253,13 +259,9 @@ mod MoveFns for Move
 	let toUci (move : Move, board : Board) : String
 		match move
 			Move(from, to, promoteTo)
-				let ff = CodePoint(from.file as I32 + "a".ord().0).show()
-				let fr = CodePoint(from.rank as I32 + "1".ord().0).show()
-				let tf = CodePoint(to.file as I32 + "a".ord().0).show()
-				let tr = CodePoint(to.rank as I32 + "1".ord().0).show()
 				let p = board.at(from).orPanic().0
 				let p = if p == promoteTo then "" else promoteTo.toSymbolLowerCase()
-				ff ++ fr ++ tf ++ tr ++ p
+				from.show() ++ to.show() ++ p
 			CastleMove(player, side)
 				let oldKingTile = Tile{rank = if player == White then 0 else 7, file = 4}
 				let newKingTile = oldKingTile { file = if side == KingSide then 6 else 2 }
@@ -993,18 +995,44 @@ let dbgFromFen (fen : String) @Impure
 	dbg(gameState.s.board.show())
 
 	match pickAMove(gameState, randomI32(), 3, gameState.s.nextToPlay)
-		Some((Move(from, to, p), _, _))
-			dbg("Move:")
-			dbg(from)
-			dbg(to)
-			dbg(p)
-		Some((CastleMove(_, _), _, _))
-			dbg("Castling move")
+		Some((m, _, _))
+			dbg(m.toUci(gameState.s.board))
 		None
 			dbg("No moves")
 
 
-let main () : () @Async
+let bench () @Async
+	let fen = "1r4k1/p1q2ppp/4b3/1p6/2p1Q3/P1R1P1P1/1P3P1P/3B2K1 b - - 0 22"
+	let gameState = parseFen(fen.words()).analyse()
+	dbg(gameState.s.board.show())
+
+	let mut m : Maybe[Move] = None
+
+	let go ()
+		set m = pickAMove(gameState, 7654, 3, gameState.s.nextToPlay).map(\(x,_,_) -> x)
+
+	go() // warmup
+
+	let runs = 5
+	let start = getTimeMs()
+	foreach _ in 0.iterUpTo(runs) then go()
+	let end = getTimeMs()
+
+	printLine("Took " ++ ((end-start) / runs as Real).show() ++ "ms")
+	dbg(m.orPanic().toUci(gameState.s.board))
+
+
+let main () @Async
+	let args = getArgs()
+	if args.length() == 2
+		listen()
+	else if args.length() == 3 and args.atOrPanic(2) == "bench"
+		bench()
+	else
+		printLine("Usage: node chess.mjs [bench]")
+
+
+let listen () @Async
 	dbg("Listening...")
 	let mut gameState = startingAnalysedState
 	let mut gameStateUciString = "position startpos"
