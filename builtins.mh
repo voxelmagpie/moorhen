@@ -10,6 +10,7 @@ builtin Lazy [A]
 builtin Any
 builtin Unreachable
 builtin Vec [A]
+builtin Iter [A]
 
 // builtin Module
 // builtin Expr
@@ -31,13 +32,11 @@ type Blocking = @(Impure, BlockingEffect)
 data @Throws [Er]
 data @MutatesVars [`L]
 
-// Potentially infinite iterator
-data InfIter [A] = End | Next(A, \ -> InfIter[A])
-
-data Iter [A] = End | Next(A, \ -> Iter[A])
-
 #deriving("Eq")
 data Ordering = OrdLt | OrdEq | OrdGt
+
+data Maybe [A] = None | Some(A)
+
 
 
 
@@ -47,12 +46,6 @@ trait Eq
 
 trait Show
 	let show : \ Self -> String
-
-
-
-
-mod IterBuiltins [A] for Iter[A]
-	let collect : \Iter[A] -> Vec[A]
 
 let lazy [A] : \(\ -> A) -> Lazy[A]
 
@@ -133,8 +126,16 @@ mod BoolBuiltins for Bool : Show, Eq
 	let neq !=
 
 mod StringBuiltins for String : Show, Eq
-	// Length in bytes, note that JS strings are UTF-16 so ASCII characters take 2 bytes
+	// Length in bytes. Note that JS strings are UTF-16 so ASCII characters take 2 bytes
 	let sizeInBytes : \String -> Int
+
+	// UTF-8: Code unit is 1 byte
+	// UTF-16: Code unit is 2 bytes
+	let lengthInCodeUnits : \String -> Int
+
+	// O(n)
+	let lengthInCodePoints : \String -> Int
+
 	let append ++ : \ String, String -> String
 	let startsWith : \String, String -> Bool
 	// [Start, end)
@@ -149,13 +150,17 @@ mod StringBuiltins for String : Show, Eq
 	// Returns the first code point in the string or 0 if empty
 	let ord : \String -> CodePoint
 
-	// Takes byte index
-	let getCodePointAt : \String, Int -> CodePoint
+	// Takes code unit index
+	// TODO Return Maybe
+	let getCodePointAt : \ String, Int -> CodePoint
+
+	// Interprets string as list of 8-bit (utf-8) or 16-bit (utf-16) code units
+	// TODO Return Maybe
+	let getCodeUnitAt : \ String, Int -> I32
 
 	let iterCodePoints : \String -> Iter[CodePoint]
 
-	let contains
-		: \ String, String -> Bool
+	let contains : \ String, String -> Bool
 
 	let show
 	let eq ==
@@ -186,6 +191,9 @@ let singletonVec [A] : \A -> Vec[A]
 // Calls the function with indices in ascending order from 0 .. length
 let buildVec [A, @E] : \Int, (\Int -> A @E) -> Vec[A] @E
 
+// Calls the function with indices in ascending order from length-1 ..= 0
+let buildVecRev [A, @E] : \Int, (\Int -> A @E) -> Vec[A] @E
+
 
 let undefined : Unreachable
 let todo : Unreachable
@@ -213,6 +221,4 @@ let randomI32 : \ -> I32 @Impure
 
 
 let getTimeMs : \ -> Real @Impure
-
-
 

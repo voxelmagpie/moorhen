@@ -123,7 +123,8 @@ visitTDef outerCtx astTDef = do
           pure $ H.TDef astTDef.name fqn gps t k H.IsAlias
         _ -> do
           when isBuiltin $ do
-            let knownTypes = ["Real", "I32", "Int", "Bool", "Unit", "String", "Lazy", "Any", "Vec", "Unreachable"]
+            let knownTypes =
+                  ["Real", "I32", "Int", "Bool", "Unit", "String", "Lazy", "Any", "Vec", "Unreachable", "Iter"]
             let nsPrefix = "#builtins/:"
             unless (nsPrefix `T.isPrefixOf` un fqn && T.drop (T.length nsPrefix) (un fqn) `elem` knownTypes)
               $ throw astTDef.name

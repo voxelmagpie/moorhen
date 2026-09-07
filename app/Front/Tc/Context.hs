@@ -32,6 +32,7 @@ data Ctx = Ctx
     blockWhereClauses :: H.WhereClauses,
     vDefWhereClauses :: H.WhereClauses,
     thisDefType :: Maybe H.Type,
+    iteratorYieldType :: Maybe H.Type,
     --
     -- Fields below are only set when type checking an expression
     --
@@ -67,6 +68,7 @@ mkFileCtx namespace (thisAst, thisAstImports) tcIn =
       blockWhereClauses = def,
       vDefWhereClauses = def,
       thisDefType = def,
+      iteratorYieldType = def,
       variables = def,
       closureDepth = 0,
       inLoop = Nothing

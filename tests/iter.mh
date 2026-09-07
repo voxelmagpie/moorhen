@@ -1,5 +1,13 @@
-//"1,2"
+//"12"
 let main () : String
-	let xs : Iter[Int] = Next(1, \ -> Next(2, \ -> End))
-	let xs = xs.collect()
-	xs.atOrPanic(0).show() ++ "," ++ xs.atOrPanic(1).show()
+	let mut s = ""
+
+	foreach i in doIter()
+		set s = s ++ i.show()
+
+	s
+
+
+iterator doIter () : Int
+	yield 1
+	yield 2

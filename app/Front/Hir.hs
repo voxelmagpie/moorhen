@@ -72,7 +72,8 @@ data VDef = VDef
     genParams :: [GenParam],
     moduleWhereClauses :: WhereClauses,
     whereClauses :: WhereClauses,
-    type' :: Type
+    type' :: Type,
+    isIterator :: Bool
   }
   deriving (Show, Generic, Eq)
 
@@ -232,6 +233,7 @@ data Expr'
         finally :: Maybe Expr
       }
   | EThrow Expr
+  | EYield Expr
   | EIndex Expr Int
   | EFieldAccess Expr VNameL
   | ERecordInit DataConsInfo (List1 Expr) (List1 (VName, Int)) -- TODO Do we need the names here?
@@ -295,7 +297,7 @@ data Stmt'
   | SAssign LocalVarUid VNameL Expr
   | SForEach
       { destr :: Destructure,
-        inExpr :: Expr, -- Iter[varType]
+        inExpr :: Expr, -- produces Iter[A] where A is the type of destr
         bodyExpr :: Expr,
         label :: LocalVarUid
       }

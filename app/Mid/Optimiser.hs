@@ -253,6 +253,9 @@ constFoldInlineExpr startingVars exprToOpt = do
         M.EThrow throwExpr ty -> do
           (throwExpr', _) <- go vars throwExpr
           pure ((M.EThrow throwExpr' ty, sr), Nothing)
+        M.EYield throwExpr -> do
+          (yieldExpr', _) <- go vars throwExpr
+          pure ((M.EYield yieldExpr', sr), Nothing)
         M.EIndex e idx name ->
           go vars e <&> \(e', _) -> ((M.EIndex e' idx name, sr), Nothing)
         M.ESumTypeActiveIndex e ->
@@ -292,6 +295,10 @@ constFoldInlineExpr startingVars exprToOpt = do
           M.SLoop expr uid -> do
             (expr', _) <- go vars expr
             pure (M.SLoop expr' uid, sr)
+          M.SForEach {iterExpr, elemUid, elemNameMaybe, label, bodyExpr} -> do
+            (iterExpr', _) <- go vars iterExpr
+            (bodyExpr', _) <- go vars bodyExpr
+            pure (M.SForEach {iterExpr = iterExpr', elemUid, elemNameMaybe, label, bodyExpr = bodyExpr'}, sr)
 
   go startingVars exprToOpt
 
@@ -408,6 +415,9 @@ renameExpr startingUidMap exprToRename = do
         M.EThrow e t -> do
           e' <- go uidMap e
           pure (M.EThrow e' t, sr)
+        M.EYield e -> do
+          e' <- go uidMap e
+          pure (M.EYield e', sr)
         M.EIndex e i nameMaybe -> do
           e' <- go uidMap e
           pure (M.EIndex e' i nameMaybe, sr)
@@ -468,6 +478,20 @@ renameExpr startingUidMap exprToRename = do
             uid' <- generateNewUid
             e' <- go ((uid, uid') : uidMap) e
             pure (M.SLoop e' uid', sr)
+          M.SForEach {iterExpr, elemUid, elemNameMaybe, label, bodyExpr} -> do
+            iterExpr' <- go uidMap iterExpr
+            elemUid' <- generateNewUid
+            label' <- generateNewUid
+            bodyExpr' <- go ((elemUid, elemUid') : (label, label') : uidMap) bodyExpr
+            let e' =
+                  M.SForEach
+                    { iterExpr = iterExpr',
+                      elemUid = elemUid',
+                      elemNameMaybe,
+                      label = label',
+                      bodyExpr = bodyExpr'
+                    }
+            pure (e', sr)
   go startingUidMap exprToRename
 
 weighExpression :: M.Expr -> Int
@@ -488,6 +512,7 @@ weighExpression (e, _) = case e of
   M.ETry {tryExpr, catch, finally} ->
     3 + weighExpression tryExpr + sum (catch <&> \(_, _, _, e') -> weighExpression e') + maybe 0 weighExpression finally
   M.EThrow {} -> 2
+  M.EYield {} -> 2
   M.EIndex e' _ _ -> 1 + weighExpression e'
   M.ESumTypeActiveIndex e' -> 1 + weighExpression e'
   M.ESumTypeGet e' -> 1 + weighExpression e'
@@ -507,6 +532,7 @@ weighStmt (s, _) = case s of
   M.SExpr e -> weighExpression e
   M.SAssign _ _ e -> 1 + weighExpression e
   M.SLoop e _ -> 1 + weighExpression e
+  M.SForEach {iterExpr, bodyExpr} -> 1 + weighExpression iterExpr + weighExpression bodyExpr
 
 data State = State
   { pkgs :: HashMap PkgName M.Mir,

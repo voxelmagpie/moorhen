@@ -73,7 +73,7 @@ ast = do
           [] -> pure ()
           _ -> do
             oneOf
-              [ (PredKw KwLet, valDefTopLevel a),
+              [ (PredOneOf [PredKw KwLet, PredKw KwIterator], valDefTopLevel a),
                 (PredOneOf $ (PredTk . Kw <$> [KwBuiltin, KwData, KwType, KwMod, KwTrait]) <> [PredSym "#"], typeDef a)
               ]
             _ <- many1 (PredTk Newline) newline
@@ -116,7 +116,12 @@ valDefTopLevel a = do
 
 letDef :: (Args) => IO A.VDef
 letDef = do
-  (_, letSr) <- kw KwLet
+  (isIterator, letSr) <-
+    oneOf
+      [ (PredKw KwLet, kw KwLet <&> first (const False)),
+        (PredKw KwIterator, kw KwIterator <&> first (const True))
+      ]
+
   name <- vName
   op <- anyOpMaybe
 
@@ -156,7 +161,7 @@ letDef = do
               (PredMany [PredTk Newline, PredSym "->"])
               ((newline >> symbol "->") *> indBlockExpr)
 
-          mkFnVDef letSr name op gps params retTypeExprMaybe whereClauses effs exprMaybe
+          mkFnVDef letSr name op gps params retTypeExprMaybe whereClauses effs exprMaybe isIterator
         _ -> do
           typeExpr' <- optWithPrefixTk (Symbol ":") $ typeExprInd <* newline
           whereClauses <- opt (PredKw KwWhere) (kw KwWhere *> list1 whereClause (PredSym ",") <* newline)
@@ -171,7 +176,8 @@ letDef = do
                 A.whereClauses = maybe [] toList whereClauses,
                 A.typeExpr = typeExpr',
                 A.expr = exprMaybe,
-                A.idx = -1
+                A.idx = -1,
+                A.isIterator
               }
     _ -> do
       genParams <- parseGenParamsMaybe
@@ -186,7 +192,7 @@ letDef = do
               Just (Symbol "->", _) -> symbol "->" *> (Just <$> expr False)
               Just (Indent, _) -> (Just <$> indBlockExpr)
               _ -> pure Nothing
-          mkFnVDef letSr name op genParams params retTypeExprMaybe whereClauses effs exprMaybe
+          mkFnVDef letSr name op genParams params retTypeExprMaybe whereClauses effs exprMaybe isIterator
         _ -> do
           typeExpr' <- optWithPrefixTk (Symbol ":") typeExpr
           whereClauses <- opt (PredKw KwWhere) (kw KwWhere *> list1 whereClause (PredSym ","))
@@ -200,7 +206,8 @@ letDef = do
                 A.whereClauses = maybe [] toList whereClauses,
                 A.typeExpr = typeExpr',
                 A.expr = exprMaybe,
-                A.idx = -1
+                A.idx = -1,
+                A.isIterator
               }
 
 param :: (Args) => IO (A.Destructure, Maybe A.TypeExpr)
@@ -245,8 +252,9 @@ mkFnVDef ::
   [(A.TypeExpr, A.TypeExpr)] ->
   [A.TypeExpr] ->
   Maybe A.Expr ->
+  Bool ->
   IO A.VDef
-mkFnVDef kwSr name op genParams (params, paramsSr) retTypeMaybe whereClauses effs exprMaybe = do
+mkFnVDef kwSr name op genParams (params, paramsSr) retTypeMaybe whereClauses effs exprMaybe isIterator = do
   -- Check params are consistent: either all have types or all don't
   let allHaveTypes = all (\(_, t) -> isJust t) params
       allNameOnly = all (\(_, t) -> isNothing t) params && null effs && isNothing retTypeMaybe
@@ -279,7 +287,8 @@ mkFnVDef kwSr name op genParams (params, paramsSr) retTypeMaybe whereClauses eff
         whereClauses,
         typeExpr = typeExprMaybe,
         expr = closureExpr',
-        idx = -1
+        idx = -1,
+        isIterator
       }
 
 destructurePredicate :: Pred
@@ -604,7 +613,7 @@ parseTraitsWhsInner = do
   defs <-
     many (PredNot $ PredTk Outdent)
       $ oneOf
-        [ (PredKw KwLet, ((Left <$> letDef) <* newline)),
+        [ (PredOneOf [PredKw KwLet, PredKw KwIterator], ((Left <$> letDef) <* newline)),
           (PredKw KwType, ((Right <$> assocType) <* newline))
         ]
 
@@ -880,6 +889,10 @@ expr isInd = do
       _ <- anyToken
       e <- expr isInd
       pure (A.EThrow e, srcRangeOf sr0 e)
+    Just (Kw KwYield, sr0) -> do
+      _ <- anyToken
+      e <- expr isInd
+      pure (A.EYield e, srcRangeOf sr0 e)
     _ -> andOrExpr isInd
 
 andOrExpr :: (Args) => Bool -> IO A.Expr

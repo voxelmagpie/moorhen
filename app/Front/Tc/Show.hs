@@ -28,3 +28,4 @@ pTypeToText = \case
   TNamedP fqn args -> shortenFqn (un fqn) <> "[" <> T.intercalate ", " (pTypeToText <$> args) <> "]"
   TEffectP es | HS.size es == 1 -> "@" <> T.concat (pTypeToText <$> toList es)
   TEffectP es -> "@(" <> T.intercalate "," (pTypeToText <$> toList es) <> ")"
+  TLifetimeP x -> "'" <> tShow x

@@ -39,7 +39,8 @@ data VDef = VDef
     whereClauses :: WhereClauses,
     typeExpr :: Maybe TypeExpr, -- Nothing for impls of trait fns
     expr :: Maybe Expr, -- Nothing for trait functions and builtins
-    idx :: Int
+    idx :: Int,
+    isIterator :: Bool
   }
   deriving (Show, Generic, Eq)
 
@@ -119,6 +120,7 @@ data Expr'
   | ERecordInit TypeExpr (List1 (VNameL, Maybe Expr))
   | EBreak
   | EContinue
+  | EYield Expr
   | EUpdate Expr [(List1 AccessorChainPart, Expr)]
   | EExplicitType Expr TypeExpr
   | EAs Expr TypeExpr

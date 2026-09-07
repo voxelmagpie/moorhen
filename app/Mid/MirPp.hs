@@ -21,7 +21,7 @@ ppMir mir = do
   pure $ T.concat $ un mir.name : "\n\n" : (sortOn (fst >>> un) vDefs <&> (snd >>> ppVDef))
 
 ppVDef :: VDef -> Text
-ppVDef v = T.concat ["let ", un v.fqn, " : ", ppType v.type', rhs, "\n\n"]
+ppVDef v = T.concat [if v.isIterator then "iterator " else "let ", un v.fqn, " : ", ppType v.type', rhs, "\n\n"]
   where
     rhs = case v.exprMaybe of
       Just e -> " =\n\t" <> ppExpr e
@@ -44,6 +44,7 @@ ppType = \case
   TLazy t -> "Lazy[" <> ppType t <> "]"
   TAny -> "Any"
   TRecursive t -> "Rec[" <> ppType t <> "]"
+  TIter t -> "Iter[" <> ppType t <> "]"
 
 ppEffects :: Effects -> Text
 ppEffects e
@@ -91,6 +92,7 @@ ppExpr (e, _) = case e of
       catchesStr = T.unwords $ toList catch <&> \(ts, uid, _, e') -> T.concat ["catch ", un ts, " ", ppVar uid, " -> ", ppExpr e']
       finallyStr = maybe "" (\e' -> " finally " <> ppExpr e') finally
   EThrow e' ts -> "throw " <> ppExpr e' <> " : " <> un ts
+  EYield e' -> "yield " <> ppExpr e'
   EIndex e' i n -> ppExpr e' <> (case n of Just n' -> "." <> un n'; _ -> "." <> tShow i)
   ESumTypeActiveIndex e' -> "sumIndex(" <> ppExpr e' <> ")"
   ESumTypeGet e' -> "sumGet(" <> ppExpr e' <> ")"
@@ -109,7 +111,9 @@ ppStmt (s, _) = case s of
   SLetUninit uid t -> T.concat ["let uninit ", ppVar uid, " : ", ppType t]
   SExpr e' -> ppExpr e'
   SAssign uid nameMaybe e' -> T.concat [ppVarWithNameL uid nameMaybe, " = ", ppExpr e']
-  SLoop e' uid -> T.concat ["loop ", ppExpr e', " ", ppVar uid]
+  SLoop e' label -> T.concat [ppVar label, ": loop { ", ppExpr e', " } "]
+  SForEach {iterExpr, elemUid, elemNameMaybe, label, bodyExpr} ->
+    T.concat [ppVar label, ": for ", ppVarWithNameL elemUid elemNameMaybe, " in ", ppExpr iterExpr, " { ", ppExpr bodyExpr, " }"]
 
 ppVar :: LocalVarUid -> Text
 ppVar uid = "$" <> tShow (un uid)

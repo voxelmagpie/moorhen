@@ -2,10 +2,14 @@
 
 let main () : Int
 	let mut j = 0
-	let it : Iter[Int] = Next(1, \ -> Next(2, \ -> End))
+	let it : Iter[Int] = doIter()
 	foreach i in it
 		set j = j + i
 		if j >= 1
 			break
 
 	j
+
+iterator doIter () : Int
+	yield 1
+	yield 2

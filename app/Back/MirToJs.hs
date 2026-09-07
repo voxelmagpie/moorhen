@@ -102,7 +102,7 @@ trPkg sourceRootRel fileName = do
         case isGlobalFnExpr vDefExpr of
           Just fn -> do
             resetFnState
-            trClosure fn sr (Just name') (Just $ fst vDef.name)
+            trClosure fn sr (Just name') (Just $ fst vDef.name) vDef.isIterator
           _ -> do
             case vDef.value of
               Just v -> do
@@ -180,8 +180,8 @@ isSmallConst = \case
 uidToText :: M.LocalVarUid -> Text
 uidToText = un >>> tShow >>> ("x" <>)
 
-trClosure :: (MonadTr m) => M.Fn -> SrcRange -> Maybe Text -> Maybe Text -> m ()
-trClosure fn sr cloName cloMhName = do
+trClosure :: (MonadTr m) => M.Fn -> SrcRange -> Maybe Text -> Maybe Text -> Bool -> m ()
+trClosure fn sr cloName cloMhName isIter = do
   let params =
         T.intercalate ", " $ fn.params <&> \(uid, nameMaybe, _, _) ->
           uidToText uid <> case nameMaybe of Just n -> " /* " <> fst n <> " */"; _ -> ""
@@ -189,14 +189,15 @@ trClosure fn sr cloName cloMhName = do
   let asyncKw = if fn.isAsync then "async " else ""
   let nameComment = case cloMhName of Just n -> " // " <> n; _ -> ""
   let retKw = if isNothing cloName then "return " else ""
+  let fnKw = if isIter then "function* " else "function "
   addLine
-    $ [(retKw <> asyncKw <> "function ", sr, Nothing)]
+    $ [(retKw <> asyncKw <> fnKw, sr, Nothing)]
     <> (case cloName of Just n -> [(n, sr, cloMhName)]; _ -> [])
     <> [(T.concat ["(", params, ") {", nameComment], sr, Nothing)]
 
   case fn.expr of
     (M.EClosure fn', sr') -> do
-      trClosure fn' sr' Nothing Nothing
+      trClosure fn' sr' Nothing Nothing False
     _ -> do
       e'' <- trExpr fn.expr
       unless (e'' == "undefined")
@@ -337,7 +338,7 @@ trExpr (e, sr) = case e of
     pure $ if isJust eMaybe then tmp else "undefined"
   M.EClosure fnId -> do
     cloName <- mkTmpVarName
-    trClosure fnId sr (Just cloName) Nothing
+    trClosure fnId sr (Just cloName) Nothing False
     pure cloName
   M.EThrow e' typStr -> do
     e'' <- trExpr e'
@@ -412,6 +413,10 @@ trExpr (e, sr) = case e of
   M.ESumTypeGet e' -> do
     e'' <- trExpr e'
     pure $ e'' <> "[1]"
+  M.EYield e' -> do
+    e'' <- trExpr e'
+    addLine [("yield " <> e'' <> ";", sr, Nothing)]
+    pure "undefined"
 
 buildJsListFromExprs :: (MonadTr m) => SrcRange -> [M.Expr] -> m Text
 buildJsListFromExprs sr es = do
@@ -437,7 +442,7 @@ trStmt (s, sr) = case s of
     case fst e of
       M.EClosure fnId -> do
         let cloName = uidToText uid
-        trClosure fnId sr (Just cloName) (nameMaybe <&> fst)
+        trClosure fnId sr (Just cloName) (nameMaybe <&> fst) False
       _ -> error "SRecLet not closure"
   M.SExpr e -> do
     void $ trExpr e
@@ -447,9 +452,19 @@ trStmt (s, sr) = case s of
       [ (uidToText uid, sr, nameMaybe <&> fst),
         (T.concat [" = ", e', ";"], sr, Nothing)
       ]
-  M.SLoop body lbl -> do
-    addLine [(uidToText lbl <> ": for(;;) {", sr, Nothing)]
+  M.SLoop body label -> do
+    addLine [(uidToText label <> ": for(;;) {", sr, Nothing)]
     _ <- trExpr body
+    addLine [("}", sr, Nothing)]
+  M.SForEach {iterExpr, elemUid, elemNameMaybe, label, bodyExpr} -> do
+    it <- trExpr iterExpr
+    let nameComment = case elemNameMaybe of Just (n, _) -> " /* " <> n <> " */"; _ -> ""
+    addLine
+      [ (uidToText label <> ": for (const ", sr, Nothing),
+        (uidToText elemUid, maybe sr snd elemNameMaybe, fst <$> elemNameMaybe),
+        (nameComment <> " of " <> it <> ") {", sr, Nothing)
+      ]
+    _ <- trExpr bodyExpr
     addLine [("}", sr, Nothing)]
 
 -- Removes symbols that cannot appear in a JS identifier and replaces them with a dollar sign followed by

@@ -1,4 +1,4 @@
-data Maybe [A] = None | Some(A)
+
 
 mod MaybeFns [A] for Maybe[A]
 	let isSome (x : Maybe[A]) : Bool

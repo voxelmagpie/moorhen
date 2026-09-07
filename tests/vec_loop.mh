@@ -7,8 +7,12 @@ let main () : Int
 		set y = y + x
 	y
 
-let iter [A] (xs : Vec[A], nextIdx : Int) : Iter[A]
-	if nextIdx >= xs.length()
-		End
-	else
-		Next(xs.atOrPanic(nextIdx), \ -> iter(xs, nextIdx+1))
+
+
+iterator iter [A] (xs : Vec[A], mut i : Int) : A
+	loop
+		if i >= xs.length()
+			break
+
+		yield xs.atOrPanic(i)
+		set i = i + 1

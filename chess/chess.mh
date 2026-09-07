@@ -442,7 +442,7 @@ mod AnalysedStateFns for AnalysedState
 
 			let emptySquareOk (file : Int)
 				let isEmpty = b.at_(file, homeRankIdx).isNone()
-				isEmpty and threats.iter().filter(\(_, to) -> to.rank == homeRankIdx and to.file == file).isEnd()
+				isEmpty and threats.iter().filter(\(_, to) -> to.rank == homeRankIdx and to.file == file).isEmpty()
 
 			let queenSideRights =
 				castlingRights.queenSide and b.at_(1, homeRankIdx).isNone() and emptySquareOk(2) and emptySquareOk(3)
@@ -649,7 +649,7 @@ mod AnalysedStateFns for AnalysedState
 							let v = piece.value()
 							let f ((from, to) : (Tile, Tile))
 								if to == tile then s.s.board.at(from).orPanic().0.value() < v else false
-							threatsToUs.iter().filter(f).isEnd().not()
+							threatsToUs.iter().filter(f).isEmpty().not()
 					if undefended
 						0.9 * piece.value()
 					else
@@ -719,60 +719,55 @@ let charToRank (c : CodePoint) : Int
 	if c.0 >= "1".ord().0 and c.0 <= "8".ord().0
 		c.0 - "1".ord().0
 	else
-		panic("charToRank")
+		panic("charToRank: " ++ c.show())
 
 let charToFile (c : CodePoint) : Int
 	if c.0 >= "a".ord().0 and c.0 <= "h".ord().0
 		c.0 - "a".ord().0
 	else
-		panic("charToFile")
+		panic("charToFile: " ++ c.show())
 
 let parseUciMove (s : String, board : Board) : Move
-	let x : Maybe[CodePoint] = None
-	let it = s.iterCodePoints()
-	let (x, it) = it.next()
-	let fromFile = charToFile(x.orPanic())
-	let (x, it) = it.next()
-	let fromRank = charToRank(x.orPanic())
+	let fromFile = charToFile(s.getCodePointAt(0))
+	let fromRank = charToRank(s.getCodePointAt(1))
 	let from = Tile{file=fromFile,rank=fromRank}
-	let (x, it) = it.next()
-	let toFile = charToFile(x.orPanic())
-	let (x, it) = it.next()
-	let toRank = charToRank(x.orPanic())
+	let toFile = charToFile(s.getCodePointAt(2))
+	let toRank = charToRank(s.getCodePointAt(3))
 	let to = Tile{file=toFile,rank=toRank}
-	let (x, it) = it.next()
-	match x
-		Some(p)
-			let p : Piece =
-				if p == "p".ord()
-					Pawn
-				else if p == "r".ord()
-					Rook
-				else if p == "n".ord()
-					Knight
-				else if p == "b".ord()
-					Bishop
-				else if p == "q".ord()
-					Queen
-				else
-					panic("UCI Promote piece")
 
-			Move(from, to, p)
-		_
-			let (piece, player) = board.at(from).orPanic()
-			let isKing = piece == King
-			let isCastle = toFile - fromFile > 1 or toFile - fromFile < -1
-
-			if isKing and isCastle
-				CastleMove(player, if toFile > 4 then KingSide else QueenSide)
+	if s.lengthInCodePoints() >= 5
+		let p = s.getCodePointAt(4)
+		let p : Piece =
+			if p == "p".ord()
+				Pawn
+			else if p == "r".ord()
+				Rook
+			else if p == "n".ord()
+				Knight
+			else if p == "b".ord()
+				Bishop
+			else if p == "q".ord()
+				Queen
 			else
-				Move(from, to, piece)
+				panic("UCI Promote piece")
+
+		Move(from, to, p)
+	else
+		let (piece, player) = board.at(from).orPanic()
+		let isKing = piece == King
+		let isCastle = toFile - fromFile > 1 or toFile - fromFile < -1
+
+		if isKing and isCastle
+			CastleMove(player, if toFile > 4 then KingSide else QueenSide)
+		else
+			Move(from, to, piece)
 
 
+data Rng (I32)
 
-
-let randomIter (x : I32) : InfIter[I32]
-	Next(x, \ -> randomIter(x * 1103515245 + 12345))
+mod RngFns for Rng
+	let next (r : Rng) : (I32, Rng)
+		(r.0, Rng(r.0 * 1103515245 + 12345))
 
 let jitter (r : I32, x : Real) : Real
 	x + (r.abs() : Real / 2147483647.0) * 0.5
@@ -796,7 +791,7 @@ let pickAMove
 		a.evaluate(enginePlayer, depth > 1).map(\e -> (m, a, e))
 
 	let mut moveCount = 0
-	let mut rng = randomIter(randomSeed)
+	let mut rng = Rng(randomSeed)
 
 	let rec go
 		(
@@ -834,7 +829,7 @@ let pickAMove
 				else
 					let (r, rng2) = rng.next()
 					set rng = rng2
-					e + jitter(r.orPanic(), e)
+					e + jitter(r, e)
 
 			if (pickBest and e > chosenMoveEval) or (!pickBest and e < chosenMoveEval)
 				set chosenMove = Some((m, a, e))
@@ -881,7 +876,7 @@ let pickAMove
 			else
 				let (r, rng2) = rng.next()
 				set rng = rng2
-				e + jitter(r.orPanic(), e)
+				e + jitter(r, e)
 
 		if e > best
 			set chosenMove = Some((m, a, e))
@@ -963,25 +958,23 @@ let parseFen (fields : Vec[String]) : State
 		if fields.length() < 4 or fields.atOrPanic(3) == "-"
 			None
 		else
-			let s = fields.atOrPanic(3).iterCodePoints()
-			let (file, s) = s.next()
-			let file = file.orPanic()
-			let (rank, s) = s.next()
-			let rank = rank.orPanic()
-			assert $ s.isEnd()
-			assert $ file.0 >= "a".ord().0 and file.0 <= "h".ord().0
-			assert $ rank.0 >= "1".ord().0 and rank.0 <= "8".ord().0
+			let s = fields.atOrPanic(3)
+			assert(s.lengthInCodePoints() == 2)
+			let file = s.getCodePointAt(0)
+			let rank = s.getCodePointAt(1)
+			assert(file.0 >= "a".ord().0 and file.0 <= "h".ord().0)
+			assert(rank.0 >= "1".ord().0 and rank.0 <= "8".ord().0)
 			let file = file.0 - "a".ord().0
 			let rank = rank.0 - "1".ord().0
 
 			if rank == 2
 				let from = Tile{ rank = 1 , file }
 				let to = Tile{ rank = 3, file }
-				Some $ Move(from, to, Pawn)
+				Some(Move(from, to, Pawn))
 			else if rank == 5
 				let from = Tile{ rank = 6 , file }
 				let to = Tile{ rank = 4, file }
-				Some $ Move(from, to, Pawn)
+				Some(Move(from, to, Pawn))
 			else
 				panic("FEN rank")
 

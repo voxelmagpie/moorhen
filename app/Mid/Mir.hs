@@ -51,6 +51,7 @@ data Type
   -- E.g. data X (Vec[(X, Int)]) -> TRecursive $ TVec $ TProduct(TAny, TInt)
   -- The inner type is always TProduct, TSum, TVec, or TAny
   | TRecursive Type
+  | TIter Type
   deriving (Show, Generic, Eq, Hashable)
 
 type TypeL = (Type, SrcRange)
@@ -78,7 +79,8 @@ data VDef = VDef
     type' :: Type,
     exprMaybe :: Maybe Expr,
     value :: Maybe Const,
-    nextLocalUid :: Int
+    nextLocalUid :: Int,
+    isIterator :: Bool
   }
   deriving (Show, Generic, Eq)
 
@@ -106,6 +108,7 @@ data Expr'
         finally :: Maybe Expr
       }
   | EThrow Expr TypeString
+  | EYield Expr
   | EIndex Expr Int (Maybe VName) -- Tuple/record or Vec (unchecked)
   | ESumTypeActiveIndex Expr -- As I32, not for enums
   | ESumTypeGet Expr
@@ -138,6 +141,13 @@ data Stmt'
   | SExpr Expr
   | SAssign LocalVarUid (Maybe TextL) Expr
   | SLoop Expr LocalVarUid
+  | SForEach
+      { iterExpr :: Expr,
+        elemUid :: LocalVarUid,
+        elemNameMaybe :: Maybe TextL,
+        label :: LocalVarUid,
+        bodyExpr :: Expr
+      }
   deriving (Show, Generic, Eq, Hashable)
 
 type Stmt = (Stmt', SrcRange)

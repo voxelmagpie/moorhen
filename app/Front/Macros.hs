@@ -113,7 +113,7 @@ generateEqMod tDef dataConss sr = do
   let cloParam n = ((A.DName (VName n) False, sr), Nothing)
   let eqCloExpr = (A.EClosure [cloParam "x", cloParam "y"] eqExpr, sr)
 
-  let eqVDef = A.VDef (VName "eq", sr) (Just (OpName "==", sr)) [] [] Nothing (Just eqCloExpr) 0
+  let eqVDef = A.VDef (VName "eq", sr) (Just (OpName "==", sr)) [] [] Nothing (Just eqCloExpr) 0 False
 
   let neqExpr =
         let x = (A.EVar Nothing (VName "x") [], sr)
@@ -121,7 +121,7 @@ generateEqMod tDef dataConss sr = do
             eqOp = (A.EMemberCall x (Right (OpName "=="), sr) [y], sr)
             notEq = (A.EMemberCall eqOp (Right (OpName "!"), sr) [], sr)
          in (A.EClosure [cloParam "x", cloParam "y"] notEq, sr)
-  let neqVDef = A.VDef (VName "neq", sr) (Just (OpName "!=", sr)) [] [] Nothing (Just neqExpr) 1
+  let neqVDef = A.VDef (VName "neq", sr) (Just (OpName "!=", sr)) [] [] Nothing (Just neqExpr) 1 False
 
   let vDefsOrdered = [eqVDef, neqVDef]
   let nameMap = HM.fromList [(VName "eq", eqVDef), (VName "neq", neqVDef)]
@@ -184,7 +184,7 @@ generateShowMod tDef dataConss sr = do
 
   let cloParam n = ((A.DName (VName n) False, sr), Nothing)
   let showCloExpr = (A.EClosure [cloParam "x"] showExpr, sr)
-  let showVDef = A.VDef (VName "show", sr) Nothing [] [] Nothing (Just showCloExpr) 0
+  let showVDef = A.VDef (VName "show", sr) Nothing [] [] Nothing (Just showCloExpr) 0 False
 
   let vDefsOrdered = [showVDef]
   let nameMap = HM.fromList [(VName "show", showVDef)]

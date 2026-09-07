@@ -26,7 +26,7 @@ ppAst ast =
 
 ppVDef :: VDef -> Text
 ppVDef vDef =
-  T.concat ["let ", ppGenParams vDef.genParams, un $ fst vDef.name, case vDef.op of Just (o, _) -> " " <> un o; _ -> "", t, wh, case vDef.expr of Just e -> " = " <> ppExpr e; _ -> ""]
+  T.concat [if vDef.isIterator then "iterator " else "let ", ppGenParams vDef.genParams, un $ fst vDef.name, case vDef.op of Just (o, _) -> " " <> un o; _ -> "", t, wh, case vDef.expr of Just e -> " = " <> ppExpr e; _ -> ""]
   where
     t = case vDef.typeExpr of
       Just x -> " : " <> ppType x
@@ -138,6 +138,7 @@ ppExpr (ETry e cs fin, _) = T.concat ["try ", ppExpr e, cs', fin']
           _ -> "_" <> " -> " <> ppExpr e'
     fin' = fromMaybe "" $ fin <&> \f -> " finally " <> ppExpr f
 ppExpr (EThrow e, _) = "throw " <> ppExpr e
+ppExpr (EYield e, _) = "yield " <> ppExpr e
 ppExpr (ELitList es, _) = "[" <> T.intercalate ", " (ppExpr <$> es) <> "]"
 ppExpr (EIndex e i, _) = ppExpr e <> "." <> tShow i
 ppExpr (EFieldAccess e (f, _), _) = ppExpr e <> "." <> un f

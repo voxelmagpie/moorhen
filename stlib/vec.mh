@@ -1,26 +1,30 @@
 import "maybe" (..)
 
 mod VecFns [A] for Vec[A]
-	let iter (xs : Vec[A]) : Iter[A]
-		_iterVec[A](xs, 0)
+	let iter (xs : Self) : Iter[A]
+		xs.iterFrom(0)
 
-	let iterRev (xs : Vec[A]) : Iter[A]
-		_iterRevVec[A](xs, xs.length() - 1)
+	iterator iterFrom (xs : Self, mut i : Int) : A
+		loop
+			match xs.at(i)
+				None
+					break
+				Some(x)
+					yield x
+					set i = i + 1
+
+	iterator iterRev (xs : Self) : A
+		let mut i = xs.length() - 1
+		loop
+			match xs.at(i)
+				None
+					break
+				Some(x)
+					yield x
+					set i = i - 1
 
 	let at (xs : Vec[A], i : Int) : Maybe[A]
 		if i < 0 or i >= xs.length() then None else Some(xs.atOrPanic(i))
 
 	let reverse (xs : Vec[A]) : Vec[A]
 		buildVec(xs.length(), \i -> xs.atOrPanic(xs.length() - i - 1))
-
-let _iterVec [A] (xs : Vec[A], nextIdx : Int) : Iter[A]
-	if nextIdx >= xs.length()
-		End
-	else
-		Next(xs.atOrPanic(nextIdx), \ -> _iterVec(xs, nextIdx+1))
-
-let _iterRevVec [A] (xs : Vec[A], nextIdx : Int) : Iter[A]
-	if nextIdx < 0
-		End
-	else
-		Next(xs.atOrPanic(nextIdx), \ -> _iterRevVec(xs, nextIdx-1))

@@ -64,6 +64,7 @@ tokens :-
 
 
   let  { tok $ const $ Kw' KwLet }
+  iterator  { tok $ const $ Kw' KwIterator }
   type   { tok $ const $ Kw' KwType }
   builtin  { tok $ const $ Kw' KwBuiltin }
   data   { tok $ const $ Kw' KwData }
@@ -93,7 +94,8 @@ tokens :-
   trait { tok $ const $ Kw' KwTrait }
   where { tok $ const $ Kw' KwWhere }
   true  { tok $ const $ Kw' KwTrue }
-  false   { tok $ const $ Kw' KwFalse }
+  false { tok $ const $ Kw' KwFalse }
+  yield { tok $ const $ Kw' KwYield }
 
   
   [[a-z] \_] [[a-zA-Z] [0-9] \_]* { tok $ Ident' . VName }  

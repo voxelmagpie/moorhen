@@ -1,7 +1,6 @@
 import "maybe" (..)
 import "iter" (..)
 
-// This is a strict version of the Iter type
 // The Int is the number of elements remaining (not counting the value stored in the Head)
 data Stack [A] = Empty | Head(A, Int, Stack[A])
 
@@ -41,11 +40,13 @@ mod StackFns [A] for Stack[A]
 	// let ++ : \ Stack[A], Stack[A] -> Stack[A] =
 	//    \ xs, ys ->
 
-
-	let iter (xs : Stack[A]) : Iter[A]
-		match xs
-			Empty -> End
-			Head(x, _, xs) -> Next(x, \ -> xs.iter())
+	iterator iter (mut xs : Stack[A]) : A
+		loop
+			match xs
+				Empty -> break
+				Head(x, _, xs2)
+					yield x
+					set xs = xs2
 
 	let atOrPanic (xs : Stack[A], i : Int) : A
 		match xs

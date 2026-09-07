@@ -37,11 +37,11 @@
 				},
 				{
 					"name": "keyword.control.moorhen",
-					"match": "\\b(if|then|else|foreach|in|loop|break|continue|return|match|and|or|try|catch|throw|finally)\\b"
+					"match": "\\b(if|then|else|foreach|in|loop|break|continue|return|match|and|or|try|catch|throw|finally|yield)\\b"
 				},
 				{
 					"name": "storage.type.moorhen",
-					"match": "\\b(trait|mod|for|where|let|mut|rec|type|builtin|data)\\b"
+					"match": "\\b(trait|mod|for|where|let|mut|rec|type|builtin|data|iterator)\\b"
 				}
 			]
 		},

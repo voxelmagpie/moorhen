@@ -86,6 +86,7 @@ function $0builtins$1$2I32Builtins$3bNot(x) { return ~x; }
 
 
 function $0builtins$1$2StringBuiltins$3sizeInBytes(x) { return x.length * 2; }
+function $0builtins$1$2StringBuiltins$3lengthInCodeUnits(x) { return x.length; }
 function $0builtins$1$2StringBuiltins$3append(x, y) { return x.concat(y); }
 function $0builtins$1$2StringBuiltins$3startsWith(x, y) { return x.startsWith(y); }
 function $0builtins$1$2StringBuiltins$3substring(x, i, j) { return x.substring(i / 2, j / 2); }
@@ -98,18 +99,21 @@ function $0builtins$1$2StringBuiltins$3ord(x) {
     return x.codePointAt(0) | 0;
 }
 function $0builtins$1$2CodePointBuiltins$3show(x) { return String.fromCodePoint(x); }
-function $0builtins$1$2StringBuiltins$3getCodePointAt(x, i) { return x.codePointAt(i / 2) | 0; }
+function $0builtins$1$2StringBuiltins$3getCodePointAt(x, i) { return x.codePointAt(i) | 0; }
 function $0builtins$1$2StringBuiltins$3contains(x, y) { return x.includes(y); }
 
-function $0builtins$1$2StringBuiltins$3iterCodePoints(s) {
-    var i = 0;
-    const f = function () {
-        if (i >= s.length) { return [0, undefined]; }
+function* $0builtins$1$2StringBuiltins$3iterCodePoints(s) {
+    for (var i = 0; i < s.length;) {
         const c = s.codePointAt(i) | 0;
         i += c <= 0xffff ? 1 : 2;
-        return [1, [c, f]];
-    };
-    return f();
+        yield c;
+    }
+}
+
+function $0builtins$1$2StringBuiltins$3lengthInCodePoints(x) {
+    var n = 0;
+    for (const _ of $0builtins$1$2StringBuiltins$3iterCodePoints(x)) { n += 1; }
+    return n;
 }
 
 
@@ -183,22 +187,19 @@ async function $0builtins$1$2buildVec$4async(l, f) {
     return xs;
 }
 
-function $0builtins$1$2IterBuiltins$3collect(iter) {
-    if (iter[0] == 0) {
-        return [];
+function $0builtins$1$2buildVecRev$4sync(l, f) {
+    var xs = new Array(l);
+    for (var i = l - 1; i >= 0; i--) {
+        xs[i] = f(i);
     }
+    return xs;
+}
 
-    var x = iter[1];
-    let xs = [];
-    var i = 0;
-    for (; ;) {
-        xs[i] = x[0];
-        iter = x[1]();
-        if (iter[0] == 0) { break; }
-        x = iter[1];
-        i += 1;
+async function $0builtins$1$2buildVecRev$4async(l, f) {
+    var xs = new Array(l);
+    for (var i = l - 1; i >= 0; i--) {
+        xs[i] = await f(i);
     }
-
     return xs;
 }
 
@@ -264,4 +265,3 @@ function $0builtins$1$2randomI32() {
 function $0builtins$1$2getTimeMs() {
     return (new Date()).getTime();
 }
-

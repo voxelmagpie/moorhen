@@ -1,14 +1,17 @@
 //"aa"
 
 let main () : String
-	let i = iter("")
-	match i
-		End -> ""
-		Next(s, i)
-			match i()
-				End -> s
-				Next(s, _) -> s
+	let mut i = 0
+	let mut s = ""
+	foreach x in iter(s)
+		set s = x
+		if i == 2
+			break
+		set i = i + 1
 
-let iter (s : String) : InfIter[String]
-	let s = s ++ "a"
-	Next(s, \ -> iter(s))
+	s
+
+iterator iter (mut s : String) : String
+	loop
+		yield s
+		set s = s ++ "a"

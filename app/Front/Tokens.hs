@@ -13,6 +13,7 @@ import SrcLoc
 
 data Keyword
   = KwLet
+  | KwIterator
   | KwType
   | KwBuiltin
   | KwData
@@ -42,6 +43,7 @@ data Keyword
   | KwWhere
   | KwTrue
   | KwFalse
+  | KwYield
   deriving (Show, Eq)
 
 kwToText :: Keyword -> Text

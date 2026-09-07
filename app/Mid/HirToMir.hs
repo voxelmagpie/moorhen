@@ -92,7 +92,7 @@ toMir' = do
           let e = mkDataConsInit ps getters dcIdx sr
           let fn = M.Fn params t e (M.Effects True True) vFqn False
           let nextUid = length xs
-          let vDef = M.VDef (un name, sr) vFqn type' (Just (M.EClosure fn, sr)) Nothing nextUid
+          let vDef = M.VDef (un name, sr) vFqn type' (Just (M.EClosure fn, sr)) Nothing nextUid False
           addVDef vFqn vDef
 
   vDefs <- getVDefs pkg
@@ -153,7 +153,7 @@ toMir' = do
             pure (e3, t3)
 
           nextUid <- getNextVarUid
-          addVDef fqn $ M.VDef vDefName fqn t e Nothing nextUid
+          addVDef fqn $ M.VDef vDefName fqn t e Nothing nextUid vDef.isIterator
     if isGenericOverEffect vDef.genParams
       then do
         go False (VFqn $ un vFqn <> "$sync")
@@ -540,6 +540,8 @@ cvtExpr (e, t, sr) = do
     H.EThrow expr@(_, exType, _) -> do
       expr' <- cvtExpr expr
       pure $ M.EThrow expr' (typeToTextFull exType)
+    H.EYield expr ->
+      M.EYield <$> cvtExpr expr
     H.EIndex expr idx -> do
       expr' <- cvtExpr expr
       pure $ M.EIndex expr' idx Nothing
@@ -723,65 +725,24 @@ cvtStmt (stmt, sr) = case stmt of
   H.SLoop expr lbl -> do
     expr' <- cvtExpr expr
     pure [(M.SLoop expr' (M.LocalVarUid $ un lbl), sr)]
-  H.SForEach {destr, inExpr, bodyExpr, label} -> do
-    -- Create temporary mutable variable for the iterator
-    uid' <- mkLocalVarUid
-    let iteratorVar = (M.EVar uid' Nothing, sr)
+  H.SForEach {destr, inExpr, bodyExpr, label = hirLabel} -> do
+    iterExpr <- cvtExpr inExpr
 
-    -- Convert the iterator expression
-    inExpr' <- cvtExpr inExpr
+    (destructureStmts, elemNameMaybe, elemUid) <- case fst3 destr of
+      H.DName n uid False ->
+        pure ([], Just (un n, thd3 destr), M.LocalVarUid $ un uid)
+      _ -> do
+        elemUid <- mkLocalVarUid
+        destrStmts <- mkDestructureStmts destr (M.EVar elemUid Nothing, sr)
+        pure (destrStmts, Nothing, elemUid)
 
-    -- Create initial assignment: mutable temporary = iterator expression
-    let initStmt = (M.SLet uid' Nothing True inExpr', sr)
-
-    -- Create the loop body: an EDoBlock that:
-    -- 1. Checks if iterator is at end (tag 0 = end) and breaks if so
-    -- 2. Otherwise, gets the payload (tag 1 = (value, lazy-next))
-    -- 3. Destructures the value
-    -- 4. Runs the body expression
-    -- 5. Updates iterator = lazy-next()
-
-    -- Check if iterator is at end (tag 0)
-    let tagExpr = (M.ESumTypeActiveIndex iteratorVar, sr)
-    let endCondition =
-          (,sr)
-            $ M.EFnCall
-              (M.EGlobal (VFqn "#builtins/:IntBuiltins.eq"), sr)
-              [tagExpr, (M.ELoadConst $ M.CInt 0, sr)]
-              False
-              M.TBool
-
-    -- Create break statement if at end
-    let lbl = M.LocalVarUid $ un label
-    let breakStmt = (M.SExpr (M.EIf endCondition (M.EBreak lbl, sr) (M.EDoBlock [] Nothing, sr) M.TUnit, sr), sr)
-
-    -- Get payload
-    let payloadExpr = (M.ESumTypeGet iteratorVar, sr)
-
-    -- Destructure the value (first element of payload)
-    destructureStmts <- mkDestructureStmts destr (M.EIndex payloadExpr 0 Nothing, sr)
-
-    -- Convert body expression
     bodyExpr' <- cvtExpr bodyExpr
-    let bodyStmt = (M.SExpr bodyExpr', sr)
+    let loopBody = (M.EDoBlock destructureStmts (Just bodyExpr'), sr)
 
-    -- Get next iterator (second element of payload)
-    let nextIterClosure = (M.EIndex payloadExpr 1 Nothing, sr)
+    let label = M.LocalVarUid (un hirLabel)
+    let loopStmt = M.SForEach {iterExpr, elemUid, elemNameMaybe, label, bodyExpr = loopBody}
 
-    -- Call next-iter function
-    foreachVarType <- cvtType $ snd3 destr
-    let evalExpr = (M.EFnCall nextIterClosure [] False foreachVarType, sr)
-
-    -- Update the iterator variable with the result of eval
-    let updateStmt = (M.SAssign uid' Nothing evalExpr, sr)
-
-    -- Build the loop body as an EDoBlock
-    let loopBody = (M.EDoBlock (breakStmt : destructureStmts <> [bodyStmt, updateStmt]) Nothing, sr)
-
-    -- Create the SLoop statement
-    let loopStmt = (M.SLoop loopBody lbl, sr)
-
-    pure [initStmt, loopStmt]
+    pure [(loopStmt, sr)]
 
 getDataTypeDefFromTNamed :: (MonadToMir m, HasCallStack) => H.Type -> m H.DataTypeDef
 getDataTypeDefFromTNamed (H.TNamed fqn _) = do
@@ -842,8 +803,9 @@ cvtType t'' = do
                     "String" -> pure M.TString
                     "Bool" -> pure M.TBool
                     "Any" -> pure M.TAny
-                    "Lazy" -> forM genArgs cvtType <&> M.TVec . (!! 0)
+                    "Lazy" -> forM genArgs cvtType <&> M.TLazy . (!! 0)
                     "Vec" -> forM genArgs cvtType <&> M.TVec . (!! 0)
+                    "Iter" -> forM genArgs cvtType <&> M.TIter . (!! 0)
                     _ -> error "Unknown builtin"
                 H.IsDataDef -> do
                   dataTypeDef <- getDataTypeDef pkg fqn

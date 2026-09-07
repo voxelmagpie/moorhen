@@ -77,11 +77,20 @@ visitVDef outerCtx astVDef implsWheres = do
                   }
 
           t <- case astVDef.typeExpr of
-            Just e -> visitTypeExpr ctx e
+            Just e -> do
+              t <- visitTypeExpr ctx e
+              if astVDef.isIterator
+                then case t of
+                  H.TFunc ps r ef -> do
+                    unless (ef == H.TEffect def) $ throw astVDef.name "Iterators must be pure"
+                    pure $ H.TFunc ps (H.TNamed (TFqn "#builtins/:Iter") [r]) ef
+                  _ -> throw astVDef.name "Iterator must be a function"
+                else
+                  pure t
             _ -> throw astVDef.name "No trait defines this function, may be missing trait or type"
           wh <- visitWhereClauses ctx astVDef.whereClauses
 
-          let d = H.VDef astVDef.name astVDef.op fqn gp implsWheres wh t
+          let d = H.VDef astVDef.name astVDef.op fqn gp implsWheres wh t astVDef.isIterator
           addVDef fqn d
           pure (fqn, d)
         Just ((trait, concreteTypes, vDef), selfType, associatedTypes) -> do
@@ -113,7 +122,7 @@ visitVDef outerCtx astVDef implsWheres = do
             Just (_, sr) -> throw sr "Operator does not match trait definition"
             _ -> throw astVDef.name "Missing operator (TODO: Get this from trait def)"
 
-          let d = H.VDef astVDef.name astVDef.op fqn gp implsWheres (H.WhereClauses wh) t
+          let d = H.VDef astVDef.name astVDef.op fqn gp implsWheres (H.WhereClauses wh) t astVDef.isIterator
           addVDef fqn d
           pure (fqn, d)
 
@@ -129,14 +138,25 @@ visitWhereClauses ctx astWhereClauses = do
 
 -- Type checks the expression in a value definition
 -- Validates that global expressions are valid constant values
-visitVDefExpr :: (MonadTc m) => Ctx -> H.Type -> A.Expr -> m ()
-visitVDefExpr ctx ex expr@(_, sr) = do
+visitVDefExpr :: (MonadTc m) => Ctx -> H.VDef -> A.Expr -> m ()
+visitVDefExpr ctx vDef expr@(_, sr) = do
+  let (ex, iteratorYieldType) =
+        if vDef.isIterator
+          then case vDef.type' of
+            H.TFunc ps (H.TNamed _ [r]) eff ->
+              -- Closure should return nothing as values are produced using the yield keyword
+              (H.TFunc ps (H.TNamed (TFqn "#builtins/:Unit") []) eff, Just r)
+            _ -> undefined
+          else
+            (vDef.type', Nothing)
+
   let fqn = ctx.fqn & must & getLeft & must
   let defType = must ctx.thisDefType
   resetLocalVarUids
-  (e', ef) <- visitExpr ctx (typeToPType defType) expr
+  let ctx' = ctx {iteratorYieldType}
+  (e', ef) <- visitExpr ctx' (typeToPType defType) expr
   unless (null ef) $ throw sr "Global variables may not have effects"
-  e'' <- implicitCast ctx e' ex
+  e'' <- implicitCast ctx' e' ex
   nextUid <- getNextLocalVarUid
   addVDefExpr fqn e'' nextUid
 

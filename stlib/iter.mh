@@ -1,156 +1,138 @@
 import "maybe" (..)
 import "stack" (..)
+import "vec" (..)
 
-// Iter is defined in builtins.mh
 
+// TODO Remove the Int from Stack and remove this
+data LinkedList [A] = Empty | Next(A, LinkedList[A])
 
-let emptyIter [A] : Iter[A] = End
-let singletonIter [A] (x : A) : Iter[A]
-	Next(x, \ -> End[A])
+iterator emptyIter [A] () : A
+	()
+
+iterator singletonIter [A] (x : A) : A
+	yield x
 
 
 mod IterFns [A] for Iter[A]
-	let isEnd (i : Iter[A]) : Bool
-		match i
-			End -> true
-			Next(_, _) -> false
+	// Evaluates first value, if there is one
+	let isEmpty (it : Self) : Bool
+		let mut empty = true
 
-	let length (it : Iter[A]) : I32
-		let mut it = it
-		let mut l : I32 = 0
-		loop
-			match it
-				End -> break
-				Next(_, xs)
-					set l = l + 1
-					set it = xs()
+		foreach _ in it
+			set empty = false
+			break
+
+		empty
+
+	let length (mut it : Self) : Int
+		let mut l = 0
+
+		foreach _ in it
+			set l = l + 1
+
 		l
 
-	let next (i : Iter[A]) : (Maybe[A], Iter[A])
-		match i
-			End -> (None, i)
-			Next(x, xs) -> (Some(x), xs())
+	iterator map [B] (xs : Self, f : \A -> B) : B
+		foreach x in xs
+			yield f(x)
 
-	let map [B] (xs : Iter[A], f : \A -> B) : Iter[B]
-		match xs
-			End -> End
-			Next(x, xs)
-				Next(f(x), \ -> xs().map(f))
+	iterator mapMaybe [B] (xs : Self, f : \A -> Maybe[B]) : B
+		foreach x in xs
+			match f(x)
+				None -> ()
+				Some(x) -> yield x
 
-	let mapMaybe [B] (xs : Iter[A], f : \A -> Maybe[B]) : Iter[B]
-		match xs
-			End -> End
-			Next(x, xs)
-				match f(x)
-					None -> xs().mapMaybe(f)
-					Some(x) -> Next(x, \ -> xs().mapMaybe(f))
-
-	let iterToInf (iter : Iter[A]) : InfIter[A]
-		match iter
-			End -> End
-			Next(x, xs) -> Next(x, \ -> xs().iterToInf())
-
-	let find (xs : Iter[A], f : \A -> Bool) : Maybe[A]
-		match xs
-			End -> None
-			Next(x, xs)
-				if f(x)
-					Some(x)
-				else
-					xs().find(f)
-
-	let zip [B] (xs : Iter[A], ys : InfIter[B]) : Iter[(A, B)]
-		match (xs, ys)
-			(Next(x, xs), Next(y, ys))
-				Next((x, y), \ -> xs().zip(ys()))
-			_ -> End
-
-	let filter (xs : Iter[A], f : \A -> Bool) : Iter[A]
-		match xs
-			End -> End
-			Next(x, xs)
-				if f(x)
-					Next(x, \ -> xs().filter(f))
-				else
-					xs().filter(f)
-
-	let filterMap [B] (xs : Iter[A], f : \A -> Maybe[B]) : Iter[B]
-		match xs
-			End -> End
-			Next(x, xs)
-				match f(x)
-					Some(x)
-						Next(x, \ -> xs().filterMap(f))
-					_
-						xs().filterMap(f)
-
-	let fold (xs : Iter[A], f : \A, A -> A, init : A) : A
-		xs.fold_(f, init)
-
-	let fold_ [B] (xs : Iter[A], f : \B, A -> B, init : B) : B
-		let mut acc = init
-		let mut xs = xs
-		loop
-			match xs
-				End -> break
-				Next(x, ys)
-					set acc = f(acc, x)
-					set xs = ys()
-		acc
-
-	let take (it : Iter[A], n : I32) : Iter[A]
-		if n <= 0
-			End
-		else
-			match it
-				End -> End
-				Next(x, xs) -> Next(x, \ -> xs().take(n-1))
-
-	// This isn't lazy because the first element of an Iter is always evaluated
-	let skip (mut it : Iter[A], mut n : I32) : Iter[A]
-		loop
-			if n <= 0
-				break
-			else
-				match it
-					End -> break
-					Next(_, xs)
-						set n = n - 1
-						set it = xs()
-
-		it
-
-	let append (it0 : Iter[A], it1 : Iter[A]) : Iter[A]
-		match it0
-			End -> it1
-			Next(x, xs)
-				Next(x, \ -> xs().append(it1))
-
-	// TODO Can this be done without the copy? (And without deep recursion)
-	let reverse (xs : Iter[A]) : Iter[A]
-		let mut ys : Stack[A] = Empty
+	let find (xs : Self, f : \A -> Bool) : Maybe[A]
+		let mut found : Maybe[A] = None
 
 		foreach x in xs
-			set ys = ys.push(x)
+			if f(x)
+				set found = Some(x)
+				break
 
-		ys.iter()
+		found
 
-	let enumFrom (xs : Iter[A], i : Int) : Iter[(Int, A)]
-		match xs
-			End -> End
-			Next(x, xs)
-				Next((i, x), \ -> xs().enumFrom(i + 1))
+	// TODO foreach x,y in xs,ys
+	// iterator zip [B] (xs : Self, ys : Iter[B]) : (A, B)
 
+	iterator filter (xs : Self, f : \A -> Bool) : A
+		foreach x in xs
+			if f(x)
+				yield x
+
+	iterator filterMap [B] (xs : Self, f : \A -> Maybe[B]) : B
+		foreach x in xs
+			match f(x)
+				Some(x) -> yield x
+				None -> ()
+
+	let fold (mut xs : Self, f : \A, A -> A, init : A) : A
+		xs.fold_(f, init)
+
+	let fold_ [B] (mut xs : Self, f : \B, A -> B, init : B) : B
+		let mut acc = init
+
+		foreach x in xs
+			set acc = f(acc, x)
+
+		acc
+
+	iterator take (it : Self, mut n : Int) : A
+		if n <= 0
+			()
+		else
+			foreach x in it
+				yield x
+				set n = n - 1
+				if n <= 0
+					break
+
+
+	iterator skip (it : Self, mut n : Int) : A
+		foreach x in it
+			if n > 0
+				set n = n - 1
+				continue
+
+			yield x
+
+	iterator append ++ (it0 : Self, it1 : Self) : A
+		foreach x in it0
+			yield x
+
+		foreach x in it1
+			yield x
+
+	// Evaluates the entire iterator
+	let reverse (xs : Self) : Self
+		xs.collect().iterRev()
+
+	iterator enumFrom (xs : Self, mut i : Int) : (Int, A)
+		foreach x in xs
+			yield (i, x)
+			set i = i + 1
 
 	// Enumerates an iterator
 	// E.g. [a, b, c] -> [(0, a), (1, b), (2, c)]
-	let enum (xs : Iter[A]) : Iter[(Int, A)]
+	let enum (xs : Self) : Iter[(Int, A)]
 		xs.enumFrom(0)
 
 
+	let collect (xs : Self) : Vec[A]
+		let mut resRev : LinkedList[A] = Empty
+		let mut l = 0
 
-mod InfIterFns [A] for InfIter[A]
-	let next (i : InfIter[A]) : (Maybe[A], InfIter[A])
-		match i
-			End -> (None, i)
-			Next(x, xs) -> (Some(x), xs())
+		foreach x in xs
+			set resRev = Next(x, resRev)
+			set l = l + 1
+
+		buildVecRev(
+			l
+			\_ ->
+				match resRev
+					Empty -> undefined
+					Next(x, xs)
+						set resRev = xs
+						x
+		)
+

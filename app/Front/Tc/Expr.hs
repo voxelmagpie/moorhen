@@ -88,6 +88,7 @@ visitExpr ctx typeHint e = do
     A.EMemberCall {} -> visitEMemberCall ctx typeHint e
     A.ETry {} -> visitETry ctx typeHint e
     A.EThrow {} -> visitEThrow ctx typeHint e
+    A.EYield {} -> visitEYield ctx typeHint e
     A.EIndex {} -> visitEIndex ctx typeHint e
     A.EFieldAccess {} -> visitEFieldAccess ctx typeHint e
     A.ERecordInit {} -> visitERecordInit ctx typeHint e
@@ -762,6 +763,16 @@ visitEThrow ctx typeHint (theExpr, sr) = case theExpr of
       _ -> throw sr "Unable to deduce type"
     let exEf = H.TNamed (TFqn "#builtins/:Throws") [exType]
     pure ((H.EThrow e', ex, sr), HS.insert exEf effs1)
+  _ -> undefined
+
+visitEYield :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEYield ctx _ (theExpr, sr) = case theExpr of
+  A.EYield e -> do
+    typeHint <- case ctx.iteratorYieldType of
+      Just t -> pure $ typeToPType t
+      _ -> throw sr "Yield is only valid within iterators"
+    (e', effs1) <- visitExpr ctx typeHint e
+    pure ((H.EYield e', unitType, sr), effs1)
   _ -> undefined
 
 visitEIndex :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)

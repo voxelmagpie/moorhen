@@ -138,7 +138,7 @@ typeCheckPackage' = do
                 tNameToGp,
                 thisDefType = Just vDef.type'
               }
-      successMaybe <- tryTcKeepErrors $ forM_ astVDef.expr $ visitVDefExpr ctx vDef.type'
+      successMaybe <- tryTcKeepErrors $ forM_ astVDef.expr $ visitVDefExpr ctx vDef
       when (isNothing successMaybe) $ setVar wasErr True
 
     forM_ (toList ast.tDefs) $ \(_, tDef) -> do
@@ -178,7 +178,7 @@ typeCheckPackage' = do
                       tNameToGp,
                       thisDefType = Just vDef.type'
                     }
-            successMaybe <- tryTcKeepErrors $ forM_ astVDef.expr $ visitVDefExpr ctx vDef.type'
+            successMaybe <- tryTcKeepErrors $ forM_ astVDef.expr $ visitVDefExpr ctx vDef
             when (isNothing successMaybe) $ setVar wasErr True
   wasErr' <- getVar wasErr
   when wasErr' throwTcException
