@@ -12,6 +12,7 @@ synopsis:
 category: Language
 build-type: Simple
 extra-doc-files: README.md
+extra-source-files: help.txt builtins.mjs
 
 executable moorhen
   main-is: Main.hs
