@@ -67,7 +67,8 @@ data Fn = Fn
     expr :: Expr,
     effects :: Effects,
     fqn :: VFqn,
-    isAsync :: IsAsync
+    isAsync :: IsAsync,
+    yieldType :: Maybe Type -- if Just then ret is Unit
   }
   deriving (Show, Generic, Eq, Hashable)
 
@@ -79,8 +80,7 @@ data VDef = VDef
     type' :: Type,
     exprMaybe :: Maybe Expr,
     value :: Maybe Const,
-    nextLocalUid :: Int,
-    isIterator :: Bool
+    nextLocalUid :: Int
   }
   deriving (Show, Generic, Eq)
 

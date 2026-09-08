@@ -21,7 +21,7 @@ ppMir mir = do
   pure $ T.concat $ un mir.name : "\n\n" : (sortOn (fst >>> un) vDefs <&> (snd >>> ppVDef))
 
 ppVDef :: VDef -> Text
-ppVDef v = T.concat [if v.isIterator then "iterator " else "let ", un v.fqn, " : ", ppType v.type', rhs, "\n\n"]
+ppVDef v = T.concat ["let ", un v.fqn, " : ", ppType v.type', rhs, "\n\n"]
   where
     rhs = case v.exprMaybe of
       Just e -> " =\n\t" <> ppExpr e
@@ -61,19 +61,16 @@ ppConst = \case
   CVec cs -> "[" <> T.intercalate ", " (ppConst <$> cs) <> "]"
   CFn fqn -> un fqn
 
-ppFn :: Fn -> Text
-ppFn fn = T.concat ["\\", paramsStr, " -> ", bodyStr]
-  where
-    paramsStr = T.intercalate ", " $ fn.params <&> \(uid, n, t, _) -> ppVarWithNameL uid n <> " : " <> ppType t
-    bodyStr = ppExpr fn.expr
-
 ppExpr :: Expr -> Text
 ppExpr (e, _) = case e of
   ELoadConst c -> ppConst c
   EVec es -> "[" <> T.intercalate ", " (ppExpr <$> es) <> "]"
   EVar uid n -> ppVarWithName uid n
   EGlobal fqn -> un fqn
-  EClosure fn -> ppFn fn
+  EClosure fn -> T.concat ["\\", paramsStr, " -> ", bodyStr]
+    where
+      paramsStr = T.intercalate ", " $ fn.params <&> \(uid, n, t, _) -> ppVarWithNameL uid n <> " : " <> ppType t
+      bodyStr = ppExpr fn.expr
   EFnCall f args ia _ -> ppExpr f <> "(" <> T.intercalate ", " (ppExpr <$> args) <> ")" <> if ia then " async" else ""
   EDoBlock stmts eMaybe -> T.concat ["{ ", T.concat (stmts <&> \s -> ppStmt s <> "; "), eMaybeStr, "}"]
     where

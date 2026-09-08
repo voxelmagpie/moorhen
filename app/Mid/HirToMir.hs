@@ -90,9 +90,9 @@ toMir' = do
           let params = zip pNames ps <&> \(uid, t') -> (uid, Nothing, t', sr)
           let getters = pNames <&> \uid -> (M.EVar uid Nothing, sr)
           let e = mkDataConsInit ps getters dcIdx sr
-          let fn = M.Fn params t e (M.Effects True True) vFqn False
+          let fn = M.Fn params t e (M.Effects True True) vFqn False Nothing
           let nextUid = length xs
-          let vDef = M.VDef (un name, sr) vFqn type' (Just (M.EClosure fn, sr)) Nothing nextUid False
+          let vDef = M.VDef (un name, sr) vFqn type' (Just (M.EClosure fn, sr)) Nothing nextUid
           addVDef vFqn vDef
 
   vDefs <- getVDefs pkg
@@ -119,6 +119,10 @@ toMir' = do
                 generateWhereParamUid H.FromVDefWheres
               else pure $ M.LocalVarUid (-1)
           exprMaybe <- case eMaybe of
+            Just (H.VDefExpr {expr = (H.EClosure params e', t, sr)}) | vDef.isIterator -> do
+              -- Extract yield type from Iter[X] return type
+              let yieldType = case vDef.type' of H.TFunc {ret = (H.TNamed _ [x])} -> x; _ -> undefined
+              Just <$> cvtClosure t (Just yieldType) params e' sr
             Just x -> Just <$> cvtExpr x.expr
             _ -> pure Nothing -- Builtin
             --
@@ -134,7 +138,8 @@ toMir' = do
                             expr,
                             effects = (M.Effects True True),
                             fqn = fqn,
-                            isAsync = False
+                            isAsync = False,
+                            yieldType = Nothing
                           }
                 pure ((clo, sr), wrapperType)
 
@@ -153,7 +158,7 @@ toMir' = do
             pure (e3, t3)
 
           nextUid <- getNextVarUid
-          addVDef fqn $ M.VDef vDefName fqn t e Nothing nextUid vDef.isIterator
+          addVDef fqn $ M.VDef vDefName fqn t e Nothing nextUid
     if isGenericOverEffect vDef.genParams
       then do
         go False (VFqn $ un vFqn <> "$sync")
@@ -214,8 +219,8 @@ mkDestructureStmts (H.DAs n uid isMut d, _, sr) expr = do
 
 cvtClosure ::
   (MonadToMir m) =>
-  H.Type -> [H.Destructure] -> H.Expr -> SrcRange -> m M.Expr
-cvtClosure cloType cloArgs e'@(_, bodyType, _) sr = do
+  H.Type -> Maybe H.Type -> [H.Destructure] -> H.Expr -> SrcRange -> m M.Expr
+cvtClosure cloType yieldTypeHir cloArgs e'@(_, bodyType, _) sr = do
   let eff = case cloType of H.TFunc _ _ x -> x; _ -> undefined
   cloAsync <- effectCouldContainAsync eff
 
@@ -243,6 +248,7 @@ cvtClosure cloType cloArgs e'@(_, bodyType, _) sr = do
   expr' <- cvtExpr e'
   let expr = (M.EDoBlock (concatMap fst destructureStmtsAndParams) $ Just expr', sr)
   ret <- cvtType bodyType
+  yieldType <- forM yieldTypeHir cvtType
 
   -- Restore previous async state
   setIsAsync oldAsync
@@ -259,7 +265,7 @@ cvtClosure cloType cloArgs e'@(_, bodyType, _) sr = do
 
   -- Create Mir function
   fqn <- getVFqn
-  let fn = M.Fn {params = snd <$> destructureStmtsAndParams, ret, expr, effects, fqn, isAsync = async}
+  let fn = M.Fn {params = snd <$> destructureStmtsAndParams, ret, expr, effects, fqn, isAsync = async, yieldType}
   pure (M.EClosure fn, sr)
 
 unreachableType :: H.Type
@@ -408,7 +414,8 @@ cvtExpr (e, t, sr) = do
       e' <- mkApplyWhereClausesExpr sr t' nextWhereClauses indexed3
       pure $ fst e'
     H.EClosure params e' -> do
-      cvtClosure t params e' sr <&> fst
+      -- Iterators handled in toMir'
+      cvtClosure t Nothing params e' sr <&> fst
     H.EFnCall (H.CalleeExpr (H.EDataCons (H.DataConsInfo {dcIdx}), calleeType, _)) args -> do
       args' <- forM args cvtExpr
       let t' = case calleeType of H.TFunc _ r _ -> r; _ -> undefined
@@ -707,7 +714,7 @@ cvtStmt (stmt, sr) = case stmt of
     case expr of
       H.EClosure params e' -> do
         let uid' = M.LocalVarUid $ un hirUid
-        expr' <- cvtClosure t params e' sr
+        expr' <- cvtClosure t Nothing params e' sr
         pure [(M.SRecLet uid' (Just $ first un name) expr', sr)]
       _ -> undefined
   H.SExpr expr -> do
