@@ -171,6 +171,10 @@ function $0builtins$1$2VecBuiltins$3sort(xs, f) {
     return ys;
 }
 
+function $0builtins$1$2VecBuiltins$3iter(xs) {
+    return xs;
+}
+
 function $0builtins$1$2buildVec$4sync(l, f) {
     var xs = new Array(l);
     for (var i = 0; i < l; i++) {

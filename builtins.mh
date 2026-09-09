@@ -182,8 +182,10 @@ mod VecBuiltins [A] for Vec[A]
 	let setAtOrPanic : \ Vec[A], Int, A -> Vec[A]
 	let length : \Vec[A] -> Int
 
-	// \ Ascending order: \x, y -> if x < y then OrdLt else if x == y then OrdEq else OrdGt
+	// Ascending order: \x, y -> if x < y then OrdLt else if x == y then OrdEq else OrdGt
 	let sort : \ Vec[A], (\A, A -> Ordering) -> Vec[A]
+
+	let iter : \Self -> Iter[A]
 
 let emptyVec [A] : Vec[A]
 let singletonVec [A] : \A -> Vec[A]

@@ -35,4 +35,4 @@ Vec[A]
 
 
 Iter[A]
-{javascript generator}
+{javascript generator or other iterable type}

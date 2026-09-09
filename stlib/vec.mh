@@ -2,8 +2,6 @@ import "maybe" (..)
 import "iter" (..)
 
 mod VecFns [A] for Vec[A]
-	let iter (xs : Self) : Iter[A]
-		xs.iterFrom(0)
 
 	iterator iterFrom (xs : Self, mut i : Int) : A
 		loop
