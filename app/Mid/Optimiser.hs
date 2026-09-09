@@ -11,7 +11,7 @@ import Data.HashMap.Strict qualified as HM
 import Data.HashTable.IO qualified as HT
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Kind (Type)
-import Data.Maybe (catMaybes, fromMaybe, isJust, mapMaybe)
+import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, mapMaybe)
 import Data.Text qualified as T
 import MhPrelude
 import Mid.Mir qualified as M
@@ -143,18 +143,24 @@ constFoldInlineExpr startingVars exprToOpt = do
             Just (KnownConst (M.CFn fqn))
               | all (snd >>> isJust) ps' && "#builtins/:" `T.isPrefixOf` un fqn ->
                   evalBuiltin fqn (snd <$> ps') sr fnCallExprNoInlining
-            Just (KnownClosure _ (Just (KnownConst c))) -> do
+            Just (KnownClosure fn (Just (KnownConst c))) | isNothing fn.yieldType -> do
               pure (valueToExpr sr c, Just $ KnownConst c)
             _ -> do
               calleeValue' <- case calleeValue of
                 Just (KnownConst (M.CFn vFqn)) -> do
                   vDef <- getVDef vFqn
-                  pure $ vDef.value <&> KnownConst
+                  pure $ case vDef.value of
+                    Just x ->
+                      Just $ KnownConst x
+                    _ ->
+                      case vDef.exprMaybe of
+                        Just (M.EClosure fn, _) -> Just $ KnownClosure fn Nothing
+                        _ -> Nothing
                 _ -> pure calleeValue
 
               depthLim <- getDepthLimit
               case calleeValue' of
-                Just (KnownClosure fn _) | depthLim > 0 -> do
+                Just (KnownClosure fn _) | depthLim > 0 && isNothing fn.yieldType -> do
                   -- Save current next UID in case we don't inline
                   savedNextUid <- getNextUid
                   setDepthLimit $ depthLim - 1
@@ -205,7 +211,11 @@ constFoldInlineExpr startingVars exprToOpt = do
         M.EClosure fn -> do
           (e, retValue) <- go vars fn.expr
           let fn' = fn {M.expr = e}
-          pure ((M.EClosure fn', sr), Just $ KnownClosure fn' retValue)
+
+          -- Return value is meaningless for coroutines, values are produced by yielding
+          let retValue' = if isJust fn.yieldType then Nothing else retValue
+
+          pure ((M.EClosure fn', sr), Just $ KnownClosure fn' retValue')
         M.EDoBlock stmts exprMaybe -> do
           varsVar <- newVar vars
           stmts' <- forM stmts $ goStmt varsVar
