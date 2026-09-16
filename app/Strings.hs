@@ -9,7 +9,7 @@ import Data.Char (intToDigit, ord)
 import MhPrelude
 
 filterString :: String -> String
-filterString s = go [] s
+filterString s = reverse $ go [] s
   where
     go :: String -> String -> String
     go result [] = result

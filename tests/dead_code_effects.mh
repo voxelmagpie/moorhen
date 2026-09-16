@@ -1,0 +1,12 @@
+//1
+
+let main () : Int
+	let mut x = 0
+
+	let f ()
+		set x = 1
+		1
+
+	let y = f() // Must not be optimised out despite value being unused
+
+	x

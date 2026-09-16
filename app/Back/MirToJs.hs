@@ -77,7 +77,7 @@ constToText = \case
   M.CI32 i -> tShow i <> "|0"
   M.CFloat x -> x
   M.CBool x -> if x then "true" else "false"
-  M.CString x -> "\"" <> T.pack (reverse $ filterString $ T.unpack x) <> "\""
+  M.CString x -> "\"" <> T.pack (filterString $ T.unpack x) <> "\""
   M.CFn fqn ->
     filterFqn (un fqn)
   M.CVec es -> do
@@ -104,9 +104,9 @@ trPkg sourceRootRel fileName = do
             resetFnState
             trClosure fn sr (Just name') (Just $ fst vDef.name)
           _ -> do
-            case vDef.value of
-              Just v -> do
-                e <- trConst v
+            case vDefExpr of
+              M.ELoadConst c -> do
+                e <- trConst c
                 addLine
                   [ ("const ", snd vDef.name, Nothing),
                     (name', snd vDef.name, Just $ fst vDef.name),
@@ -268,25 +268,26 @@ trExpr (e, sr) = case e of
   M.EGlobal fqn -> do
     vDef <- getVDef fqn
     let fqn' = filterFqn $ un fqn
-    case (vDef.exprMaybe, vDef.value) of
-      (Just (e', _), Nothing) | isNothing $ isGlobalFnExpr e' -> do
+    case vDef.exprMaybe of
+      Just (M.ELoadConst _, _) -> pure fqn'
+      Just (e', _) | isNothing $ isGlobalFnExpr e' -> do
         -- Evaluate thunk
         tmp <- mkTmpVarName
         addLine [(T.concat ["const " <> tmp <> " = $0builtins$1$2LazyFns$3eval(", fqn', ");"], sr, Nothing)]
         pure tmp
       _ -> pure fqn'
-  M.EFnCall (M.EGlobal (VFqn "#builtins/:lazy"), _) argsExprs _ _retType -> do
+  M.EFnCall (M.ELoadConst (M.CFn (VFqn "#builtins/:lazy")), _) argsExprs _ _retType -> do
     tmp <- mkTmpVarName
     e' <- trExpr $ must $ head argsExprs
     addLine [("const " <> tmp <> " = [false, " <> e' <> "];", sr, Nothing)]
     pure tmp
-  M.EFnCall (M.EGlobal fqn, _) argsExprs _ _retType
+  M.EFnCall (M.ELoadConst (M.CFn fqn), _) argsExprs _ _retType
     | isJust $ HM.lookup fqn inlinableUnaryFunctionOperators -> do
         let op = must $ HM.lookup fqn inlinableUnaryFunctionOperators
         assertM $ length argsExprs == 1
         arg <- trExpr $ must $ head argsExprs
         pure $ op <> arg
-  M.EFnCall (M.EGlobal fqn, _) argsExprs _ _retType
+  M.EFnCall (M.ELoadConst (M.CFn fqn), _) argsExprs _ _retType
     | isJust $ HM.lookup fqn inlinableFunctionOperators -> do
         let op = must $ HM.lookup fqn inlinableFunctionOperators
         assertM $ length argsExprs == 2
@@ -333,7 +334,7 @@ trExpr (e, sr) = case e of
     forM_ ss trStmt
     forM_ eMaybe $ \e' -> do
       e'' <- trExpr e'
-      addLine [(T.concat [tmp, " = ", e'', ";"], sr, Nothing)]
+      unless (e'' == "undefined") $ addLine [(T.concat [tmp, " = ", e'', ";"], sr, Nothing)]
     addLine [("}", sr, Nothing)]
     pure $ if isJust eMaybe then tmp else "undefined"
   M.EClosure fnId -> do

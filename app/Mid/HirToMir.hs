@@ -92,7 +92,7 @@ toMir' = do
           let e = mkDataConsInit ps getters dcIdx sr
           let fn = M.Fn params t e (M.Effects True True) vFqn False Nothing
           let nextUid = length xs
-          let vDef = M.VDef (un name, sr) vFqn type' (Just (M.EClosure fn, sr)) Nothing nextUid
+          let vDef = M.VDef (un name, sr) vFqn type' (Just (M.EClosure fn, sr)) nextUid
           addVDef vFqn vDef
 
   vDefs <- getVDefs pkg
@@ -158,7 +158,7 @@ toMir' = do
             pure (e3, t3)
 
           nextUid <- getNextVarUid
-          addVDef fqn $ M.VDef vDefName fqn t e Nothing nextUid
+          addVDef fqn $ M.VDef vDefName fqn t e nextUid
     if isGenericOverEffect vDef.genParams
       then do
         go False (VFqn $ un vFqn <> "$sync")
@@ -237,7 +237,7 @@ cvtClosure cloType yieldTypeHir cloArgs e'@(_, bodyType, _) sr = do
   destructureStmtsAndParams <- forM cloArgs $ \arg@(d, t, sr') -> do
     t' <- cvtType t
     case d of
-      H.DName n uid _ ->
+      H.DName n uid False ->
         pure ([], ((M.LocalVarUid $ un uid), Just (un n, sr'), t', sr'))
       _ -> do
         uid <- mkLocalVarUid
@@ -703,8 +703,8 @@ cvtStmt (stmt, sr) = case stmt of
   H.SLet d expr -> do
     expr' <- cvtExpr expr
     case fst3 d of
-      H.DName n uid m ->
-        pure [(M.SLet (M.LocalVarUid $ un uid) (Just (un n, sr)) m expr', sr)]
+      H.DName n uid False ->
+        pure [(M.SLet (M.LocalVarUid $ un uid) (Just (un n, sr)) False expr', sr)]
       _ -> do
         uid <- mkLocalVarUid
         let letStmt = (M.SLet uid Nothing False expr', sr)

@@ -25,9 +25,7 @@ ppVDef v = T.concat ["let ", un v.fqn, " : ", ppType v.type', rhs, "\n\n"]
   where
     rhs = case v.exprMaybe of
       Just e -> " =\n\t" <> ppExpr e
-      Nothing -> case v.value of
-        Just c -> " =\n\t" <> ppConst c
-        Nothing -> "" -- No value, e.g. a builtin or a definition with no body
+      Nothing -> ""
 
 ppType :: Type -> Text
 ppType = \case
@@ -108,9 +106,9 @@ ppStmt (s, _) = case s of
   SLetUninit uid t -> T.concat ["let uninit ", ppVar uid, " : ", ppType t]
   SExpr e' -> ppExpr e'
   SAssign uid nameMaybe e' -> T.concat [ppVarWithNameL uid nameMaybe, " = ", ppExpr e']
-  SLoop e' label -> T.concat [ppVar label, ": loop { ", ppExpr e', " } "]
+  SLoop e' label -> T.concat [ppVar label, ": loop -> ", ppExpr e']
   SForEach {iterExpr, elemUid, elemNameMaybe, label, bodyExpr} ->
-    T.concat [ppVar label, ": for ", ppVarWithNameL elemUid elemNameMaybe, " in ", ppExpr iterExpr, " { ", ppExpr bodyExpr, " }"]
+    T.concat [ppVar label, ": foreach ", ppVarWithNameL elemUid elemNameMaybe, " in ", ppExpr iterExpr, " -> ", ppExpr bodyExpr]
 
 ppVar :: LocalVarUid -> Text
 ppVar uid = "$" <> tShow (un uid)

@@ -79,7 +79,6 @@ data VDef = VDef
     fqn :: VFqn,
     type' :: Type,
     exprMaybe :: Maybe Expr,
-    value :: Maybe Const,
     nextLocalUid :: Int
   }
   deriving (Show, Generic, Eq)
