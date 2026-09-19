@@ -263,7 +263,8 @@ trConst c =
 trExpr :: (MonadTr m) => M.Expr -> m Text
 trExpr (e, sr) = case e of
   M.ELoadConst c -> trConst c
-  M.EVec es -> buildJsListFromExprs sr es
+  M.EVec es ->
+    forM (toList es) trExpr <&> \es' -> T.concat ["[", T.intercalate ", " es', "]"]
   M.EVar uid nameMaybe -> pure $ uidToText uid <> maybe "" (\n -> " /* " <> n <> " */") nameMaybe
   M.EGlobal fqn -> do
     vDef <- getVDef fqn
@@ -385,10 +386,13 @@ trExpr (e, sr) = case e of
     addLine [(tmp <> " = " <> rhs' <> ";", sr, Nothing)]
     addLine [("} else { " <> tmp <> " = true; }", sr, Nothing)]
     pure tmp
-  M.EProduct es -> buildJsListFromExprs sr $ toList es
+  M.EProduct es -> do
+    es' <- forM (toList es) trExpr
+    let fields = zip es' [0 :: Int ..] <&> \(e', i) -> T.concat ["x", tShow i, " : ", e']
+    pure $ "{ " <> T.intercalate ", " fields <> " }"
   M.EIndex e' i _ -> do
     e'' <- trExpr e'
-    pure $ T.concat [e'', "[", tShow i, "]"]
+    pure $ T.concat [e'', ".x", tShow i]
   M.EBreak lbl -> addLine [("break " <> uidToText lbl <> ";", sr, Nothing)] $> "undefined"
   M.EContinue lbl -> addLine [("continue " <> uidToText lbl <> ";", sr, Nothing)] $> "undefined"
   M.EUnreachableCast e' _ ->
@@ -404,28 +408,20 @@ trExpr (e, sr) = case e of
       _ -> e''
   M.ESum _ idx e' -> do
     e'' <- trExpr e'
-    pure $ "[" <> tShow idx <> "|0, " <> e'' <> "]"
+    pure $ "{ tag : " <> tShow idx <> "|0, value :" <> e'' <> " }"
   M.EUnreachable msg -> do
     addLine [("throw new Error(" <> tShow msg <> ");", sr, Nothing)]
     pure "undefined"
   M.ESumTypeActiveIndex e' -> do
     e'' <- trExpr e'
-    pure $ e'' <> "[0]"
+    pure $ e'' <> ".tag"
   M.ESumTypeGet e' -> do
     e'' <- trExpr e'
-    pure $ e'' <> "[1]"
+    pure $ e'' <> ".value"
   M.EYield e' -> do
     e'' <- trExpr e'
     addLine [("yield " <> e'' <> ";", sr, Nothing)]
     pure "undefined"
-
-buildJsListFromExprs :: (MonadTr m) => SrcRange -> [M.Expr] -> m Text
-buildJsListFromExprs sr es = do
-  tmp <- mkTmpVarName
-
-  xs <- forM (toList es) trExpr
-  addLine [(T.concat ["const ", tmp, " = [", T.intercalate ", " xs, "];"], sr, Nothing)]
-  pure tmp
 
 trStmt :: (MonadTr m) => M.Stmt -> m ()
 trStmt (s, sr) = case s of
