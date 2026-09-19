@@ -67,7 +67,7 @@ realType :: H.Type
 realType = H.TNamed (TFqn "#builtins/:Real") []
 
 -- Changes to this type signature must be mirrored in Expr.hs-boot
-visitExpr :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitExpr :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitExpr ctx typeHint e = do
   case fst e of
     A.ELitInt {} -> visitELitInt ctx typeHint e
@@ -98,39 +98,39 @@ visitExpr ctx typeHint e = do
     A.EExplicitType {} -> visitEExplicitType ctx typeHint e
     A.EAs {} -> visitEAs ctx typeHint e
 
-visitELitInt :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitELitInt :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitELitInt _ typeHint (theExpr, sr) = case theExpr of
   A.ELitInt i -> do
     case typeHint of
       TNamedP (TFqn "#builtins/:I32") _
         | i >= -2147483648 && i <= 2147483647 ->
-            pure ((H.ELitInt32 $ fromIntegral i, i32Type, sr), def)
+            pure (H.ELitInt32 $ fromIntegral i, i32Type, sr)
       TNamedP (TFqn "#builtins/:Real") _
         | i >= -9007199254740992 && i <= 9007199254740992 ->
-            pure ((H.ELitFloat $ tShow i, realType, sr), def)
+            pure (H.ELitFloat $ tShow i, realType, sr)
       _ ->
-        pure ((H.ELitInt i, intType, sr), def)
+        pure (H.ELitInt i, intType, sr)
   _ -> undefined
 
-visitELitFloat :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitELitFloat :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitELitFloat _ _ (theExpr, sr) = case theExpr of
   A.ELitFloat f ->
-    pure ((H.ELitFloat f, realType, sr), def)
+    pure (H.ELitFloat f, realType, sr)
   _ -> undefined
 
-visitELitBool :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitELitBool :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitELitBool _ _ (theExpr, sr) = case theExpr of
   A.ELitBool b ->
-    pure ((H.ELitBool b, boolType, sr), def)
+    pure (H.ELitBool b, boolType, sr)
   _ -> undefined
 
-visitELitString :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitELitString :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitELitString _ _ (theExpr, sr) = case theExpr of
   A.ELitString s ->
-    pure ((H.ELitString s, stringType, sr), def)
+    pure (H.ELitString s, stringType, sr)
   _ -> undefined
 
-visitELitList :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitELitList :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitELitList ctx typeHint (theExpr, sr) = case theExpr of
   A.ELitList es -> do
     case head es of
@@ -138,24 +138,24 @@ visitELitList ctx typeHint (theExpr, sr) = case theExpr of
         let e0Hint = case typeHint of
               TNamedP (TFqn "#builtins/:Vec") [t] -> t
               _ -> TUnknown
-        (e0'@(_, t, _), effs1) <- visitExpr ctx e0Hint e0
+        e0'@(_, t, _) <- visitExpr ctx e0Hint e0
         let hint = typeToPType t
         tail' <- forM (tail es) $ \e -> do
-          (e', ef) <- visitExpr ctx hint e
+          e' <- visitExpr ctx hint e
           e'' <- implicitCast ctx e' t
-          pure (e'', ef)
+          pure e''
 
         let t' = H.TNamed (TFqn "#builtins/:Vec") [t]
-        pure ((H.ELitList $ e0' : (fst <$> tail'), t', sr), effs1 <> mconcat (snd <$> tail'))
+        pure (H.ELitList $ e0' : tail', t', sr)
       _ -> do
         t <- case pTypeToType typeHint of
           Just x@(H.TNamed (TFqn "#builtins/:Vec") [_]) -> pure x
           _ -> throw sr "Unable to deduce type of empty list"
 
-        pure ((H.ELitList [], t, sr), def)
+        pure (H.ELitList [], t, sr)
   _ -> undefined
 
-visitEVar :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEVar :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEVar ctx typeHint (theExpr, sr) = case theExpr of
   A.EVar qualMaybe name genArgs -> do
     let findGlobal = do
@@ -178,20 +178,25 @@ visitEVar ctx typeHint (theExpr, sr) = case theExpr of
               let t = substituteGenerics gpMap vDef.type'
               pure (t, genArgs', whs)
           let whs' = H.WhereClauseTraits {mod = [], vDef = whs}
-          pure ((H.EGlobal fqn ts (isGenericOverEffect vDef.genParams) whs', t, sr), def)
+          pure (H.EGlobal fqn ts (isGenericOverEffect vDef.genParams) whs', t, sr)
 
     case qualMaybe of
       Just _ -> findGlobal
       _ -> case findLocalVarByName ctx name of
         Just v -> do
           unless (null genArgs) $ throw sr "Local variables cannot be generic"
-          pure ((H.EVar v.uid (un name), v.typ, sr), def)
+          when (v.closureDepth /= ctx.closureDepth) $ addCapture v.uid
+          pure (H.EVar v.uid (un name), v.typ, sr)
         _ -> findGlobal
   _ -> undefined
 
-visitEClosure :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
-visitEClosure ctx typeHint (theExpr, sr) = case theExpr of
+visitEClosure :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
+visitEClosure outerCtx typeHint (theExpr, sr) = case theExpr of
   A.EClosure params astExpr -> do
+    let closureDepth = outerCtx.closureDepth + 1
+    -- inLoop is to disambiguate the record update :/
+    let ctx = outerCtx {closureDepth, inLoop = outerCtx.inLoop}
+
     explicitParamTypes <- forM params $ \(_, t) -> forM t $ visitTypeExpr ctx
 
     let (paramsTypesHints, retTypeHint) = case typeHint of
@@ -205,21 +210,34 @@ visitEClosure ctx typeHint (theExpr, sr) = case theExpr of
         Just t' -> pure t'
         _ -> throw sr' "Unable to infer closure parameter type"
 
-    let closureDepth = ctx.closureDepth + 1
+    outerCloEffs <- getEffects
+    outerCloCaps <- getCaptures
+    outerCloDecls <- getLocalDecls
+    setEffects def
+    setCaptures def
+    setLocalDecls def
 
-    ctxVar <- newVar $ ctx {closureDepth, inLoop = ctx.inLoop} -- inLoop is to disambiguate the record update :/
+    ctxVar <- newVar ctx
     params' <- forM (zip params paramsTypes) $ \((d, _), t) -> visitDestructure ctxVar t d
     ctx' <- getVar ctxVar
+    e@(_, retType, _) <- visitExpr ctx' retTypeHint astExpr <&> (`implicitCastHint` retTypeHint)
 
-    (e@(_, retType, _), ef) <- visitExpr ctx' retTypeHint astExpr <&> first (`implicitCastHint` retTypeHint)
-    assertM $ flip all ef $ \case H.TNamed {} -> True; _ -> False
-    let efType = H.TEffect ef
+    thisCloEffs <- getEffects
+    caps <- getCaptures
+    decls <- getLocalDecls
+
+    setEffects outerCloEffs
+    setCaptures $ outerCloCaps <> (caps `HS.difference` decls)
+    setLocalDecls outerCloDecls
+
+    assertM $ flip all thisCloEffs $ \case H.TNamed {} -> True; _ -> False
+    let efType = H.TEffect thisCloEffs
     let fnType = H.TFunc paramsTypes retType efType
 
-    pure ((H.EClosure params' e, fnType, sr), def)
+    pure (H.EClosure params' e caps, fnType, sr)
   _ -> undefined
 
-visitEFnCall :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEFnCall :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
   A.EFnCall astCalleeExpr astArgsExprs -> do
     calleeExprOrHint <- case fst astCalleeExpr of
@@ -229,7 +247,7 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
 
               let gp = vDef.genParams
               if null gp
-                then pure $ Left ((H.EGlobal fqn [] False def, vDef.type', sr), def)
+                then pure $ Left (H.EGlobal fqn [] False def, vDef.type', sr)
                 else do
                   let paramHints = replicate (length astArgsExprs) TUnknown
                   gpHints <- inferGenericArgsHints [] vDef.genParams (TFuncP paramHints typeHint TUnknown) vDef.type' sr
@@ -239,8 +257,9 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
         case qualMaybe of
           Just _ -> findGlobal
           _ -> case findLocalVarByName ctx name of
-            Just v ->
-              pure $ Left ((H.EVar v.uid (un name), v.typ, sr), def)
+            Just v -> do
+              when (v.closureDepth /= ctx.closureDepth) $ addCapture v.uid
+              pure $ Left (H.EVar v.uid (un name), v.typ, sr)
             _ -> findGlobal
       A.EDataCons qualMaybe name [] ->
         getDataCons' ctx typeHint qualMaybe name $ \fqn dataTypeDef -> do
@@ -259,7 +278,7 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
                   }
           if null dataTypeDef.t1.genParams
             then
-              pure $ Left ((H.EDataCons dcInfo, genericType, sr), def)
+              pure $ Left (H.EDataCons dcInfo, genericType, sr)
             else do
               let gps = dataTypeDef.t1.genParams
               let gps' = gps <&> (.fqn)
@@ -272,14 +291,14 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
         Left <$> visitExpr ctx hint astCalleeExpr
 
     case calleeExprOrHint of
-      Left ((_, H.TFunc ps _ _, _), _) ->
+      Left (_, H.TFunc ps _ _, _) ->
         unless (length ps == length astArgsExprs) $ throw sr "Wrong number of arguments to function"
       -- Will be checked later
       _ -> pure ()
 
     let paramsHints =
           let x = case calleeExprOrHint of
-                Left ((_, H.TFunc ps _ _, _), _) -> typeToPType <$> ps
+                Left (_, H.TFunc ps _ _, _) -> typeToPType <$> ps
                 Right (TFuncP ps _ _) -> ps
                 _ -> []
            in x <> replicate (max 0 $ length astArgsExprs - length x) TUnknown
@@ -289,29 +308,29 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
     calleeExpr <- case calleeExprOrHint of
       Left e -> pure e
       Right _ -> do
-        let paramsHints' = argsExprs <&> (fst >>> snd3 >>> typeToPType)
+        let paramsHints' = argsExprs <&> (snd3 >>> typeToPType)
         visitExpr ctx (TFuncP paramsHints' typeHint TUnknown) astCalleeExpr
 
-    (argsExprs', retType, fnEffs) <- case snd3 $ fst calleeExpr of
+    (argsExprs', retType, fnEffs) <- case snd3 calleeExpr of
       H.TFunc ps r ef -> do
         unless (length ps == length astArgsExprs) $ throw sr "Wrong number of arguments to function"
-        as <- forM (zip ps argsExprs) $ \(ex, (argExpr, efs)) ->
-          implicitCast ctx argExpr ex <&> (,efs)
+        as <- forM (zip ps argsExprs) $ \(ex, argExpr) ->
+          implicitCast ctx argExpr ex
         pure (as, r, case ef of H.TEffect x -> x; _ -> undefined)
       _ -> throw astCalleeExpr "Type is not a function"
 
-    let effs = mconcat $ snd calleeExpr : fnEffs : (snd <$> argsExprs')
-    let effs' = flip filter effs $ \case
-          H.TNamed (TFqn "#builtins/:MutatesVars") [H.TLifetime l] ->
-            l < ctx.closureDepth
-          _ -> True
+    do
+      efs <- getEffects <&> (<> fnEffs)
+      assertM $ flip all efs $ \case H.TNamed {} -> True; _ -> False
+      setEffects $ flip filter efs $ \case
+        H.TNamed (TFqn "#builtins/:MutatesVars") [H.TLifetime l] ->
+          l < ctx.closureDepth
+        _ -> True
 
-    assertM $ flip all effs' $ \case H.TNamed {} -> True; _ -> False
-
-    pure ((H.EFnCall (H.CalleeExpr $ fst calleeExpr) (fst <$> argsExprs'), retType, sr), effs')
+    pure (H.EFnCall (H.CalleeExpr calleeExpr) argsExprs', retType, sr)
   _ -> undefined
 
-visitEDoBlock :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEDoBlock :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEDoBlock ctx typeHint (theExpr, sr) = case theExpr of
   A.EDoBlock ss eMaybe -> do
     ctxVar <- newVar ctx
@@ -319,23 +338,22 @@ visitEDoBlock ctx typeHint (theExpr, sr) = case theExpr of
       visitStmt ctxVar TUnknown s
     ctx' <- getVar ctxVar
     e <- forM eMaybe $ visitExpr ctx' typeHint
-    let (t, exprEffs) = case e of
-          Just ((_, t', _), es) -> (t', es)
-          _ -> (unitType, def)
-    let effs = mconcat $ exprEffs : (snd <$> ss')
-    pure ((H.EDoBlock (ss' <&> fst) (e <&> fst), t, sr), effs)
+    let t = case e of
+          Just (_, t', _) -> t'
+          _ -> unitType
+    pure (H.EDoBlock ss' e, t, sr)
   _ -> undefined
 
-visitEIf :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEIf :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEIf ctx typeHint (theExpr, sr) = case theExpr of
   A.EIf astCondExpr astThenExpr astElseExpr -> do
-    (condExpr@(_, shouldBeBool, _), ef0) <- visitExpr ctx boolHint astCondExpr
+    condExpr@(_, shouldBeBool, _) <- visitExpr ctx boolHint astCondExpr
     unless (shouldBeBool == boolType)
       $ throw astCondExpr
       $ "Condition type must be Bool, got "
       <> typeToText shouldBeBool
-    (thenExpr@(_, t0, _), ef1) <- visitExpr ctx typeHint astThenExpr
-    (elseExpr@(_, t1, _), ef2) <- visitExpr ctx typeHint astElseExpr
+    thenExpr@(_, t0, _) <- visitExpr ctx typeHint astThenExpr
+    elseExpr@(_, t1, _) <- visitExpr ctx typeHint astElseExpr
     let t = if t0 == unreachableType then t1 else t0
     thenExpr'@(_, t0', _) <- implicitCast ctx thenExpr t
     elseExpr'@(_, t1', _) <- implicitCast ctx elseExpr t
@@ -344,47 +362,47 @@ visitEIf ctx typeHint (theExpr, sr) = case theExpr of
       $ throw
         sr
         ("If-else branch types do not match\nGot " <> typeToText t0 <> " and " <> typeToText t1)
-    pure ((H.EIf condExpr thenExpr' elseExpr', t, sr), ef0 <> ef1 <> ef2)
+    pure (H.EIf condExpr thenExpr' elseExpr', t, sr)
   _ -> undefined
 
-visitETuple :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitETuple :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitETuple ctx typeHint (theExpr, sr) = case theExpr of
   A.ETuple es -> do
     let hints = case typeHint of
           TTupleP xs -> xs
           _ -> List2 TUnknown TUnknown $ replicate (length es - 2) TUnknown
     es' <- forM (zipList2 es hints) $ \(e, h) -> visitExpr ctx h e
-    let t = H.TTuple $ (fst >>> snd3) <$> es'
-    let e = H.ETuple $ fst <$> es'
-    pure ((e, t, sr), mconcat $ snd <$> toList es')
+    let t = H.TTuple $ (snd3) <$> es'
+    let e = H.ETuple $ es'
+    pure (e, t, sr)
   _ -> undefined
 
-visitEAnd :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEAnd :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEAnd ctx _ (theExpr, sr) = case theExpr of
   A.EAnd lhs rhs -> do
-    (lhs', eff1) <- visitExpr ctx boolHint lhs
+    lhs' <- visitExpr ctx boolHint lhs
     lhs'' <- implicitCast ctx lhs' boolType
-    (rhs', eff2) <- visitExpr ctx boolHint rhs
+    rhs' <- visitExpr ctx boolHint rhs
     rhs'' <- implicitCast ctx rhs' boolType
 
-    pure ((H.EAnd lhs'' rhs'', boolType, sr), eff1 <> eff2)
+    pure (H.EAnd lhs'' rhs'', boolType, sr)
   _ -> undefined
 
-visitEOr :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEOr :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEOr ctx _ (theExpr, sr) = case theExpr of
   A.EOr lhs rhs -> do
-    (lhs', eff1) <- visitExpr ctx boolHint lhs
+    lhs' <- visitExpr ctx boolHint lhs
     lhs'' <- implicitCast ctx lhs' boolType
-    (rhs', eff2) <- visitExpr ctx boolHint rhs
+    rhs' <- visitExpr ctx boolHint rhs
     rhs'' <- implicitCast ctx rhs' boolType
 
-    pure ((H.EOr lhs'' rhs'', boolType, sr), eff1 <> eff2)
+    pure (H.EOr lhs'' rhs'', boolType, sr)
   _ -> undefined
 
-visitEMatch :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEMatch :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEMatch ctx typeHint (theExpr, sr) = case theExpr of
   A.EMatch caseExpr bs -> do
-    (caseExpr'@(_, exprType, _), ef0) <- visitExpr ctx TUnknown caseExpr
+    caseExpr'@(_, exprType, _) <- visitExpr ctx TUnknown caseExpr
     -- TODO Ensure branch patterns are complete
     finalType <- newVar Nothing
     bs' <- forM bs $ \b -> do
@@ -394,21 +412,20 @@ visitEMatch ctx typeHint (theExpr, sr) = case theExpr of
       guard <- forM b.guard $ visitExpr ctx' boolHint
       tMaybe <- getVar finalType
       let hint = case tMaybe of Just x -> typeToPType x; _ -> typeHint
-      (e'@(_, t, _), ef1) <- visitExpr ctx' hint b.expr
+      e'@(_, t, _) <- visitExpr ctx' hint b.expr
       e'' <- case tMaybe of
         Just ex'' -> do
           implicitCast ctx' e' ex''
         _ -> do
           unless (t == unreachableType) $ setVar finalType $ Just t
           pure e'
-      pure (H.MatchBranch p' (fst <$> guard) e'', case guard of Just (_, ef) -> ef <> ef1; _ -> ef1)
+      pure (H.MatchBranch p' guard e'')
 
-    let effs = mconcat $ ef0 : (snd <$> toList bs')
     t <- getVar finalType <&> fromMaybe unreachableType
-    pure ((H.EMatch caseExpr' $ bs' <&> fst, t, sr), effs)
+    pure (H.EMatch caseExpr' bs', t, sr)
   _ -> undefined
 
-visitEDataCons :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEDataCons :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEDataCons ctx typeHint (theExpr, sr) = case theExpr of
   A.EDataCons qualMaybe name genArgs -> do
     e <- do
@@ -420,7 +437,7 @@ visitEDataCons ctx typeHint (theExpr, sr) = case theExpr of
           let t = H.TFunc dcFieldTypes dataType (H.TEffect def)
           pure (e, t, sr)
         H.RecordFields _ -> throw sr "Record data constructors cannot be used as function values"
-    pure (e, def)
+    pure e
   _ -> undefined
 
 data VisitMembCallLookupResult = VisitMembCallLookupResult
@@ -436,10 +453,10 @@ data VisitMembCallLookupResult = VisitMembCallLookupResult
     fromTraitTypeMaybe :: Maybe (H.Trait, H.TraitVDef)
   }
 
-visitEMemberCall :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEMemberCall :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
   A.EMemberCall astLhsExpr name astExtraArgsExprs -> do
-    (lhs, lhsEff) <- visitExpr ctx TUnknown astLhsExpr
+    lhs <- visitExpr ctx TUnknown astLhsExpr
 
     foundWithWrongNumParams <- newVar False
     let expectedParamsCount = 1 + length astExtraArgsExprs
@@ -649,7 +666,7 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
           calleeExpr <- case calleeExprOrHint of
             Left e -> pure e
             Right _ -> do
-              let extraParamsHints' = extraArgsExprs <&> (fst >>> snd3 >>> typeToPType)
+              let extraParamsHints' = extraArgsExprs <&> (snd3 >>> typeToPType)
               let pType = TFuncP (typeToPType (snd3 lhs) : extraParamsHints') typeHint TUnknown
               let modParams' = modParams <&> (.fqn)
               genArgs <- inferGenericArgs modParams' vDefGenParams pType vDefType (thd3 lhs)
@@ -701,33 +718,44 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
       H.TFunc ps r ef -> do
         unless (length ps == length astExtraArgsExprs + 1)
           $ throw (srcRangeOf name astExtraArgsExprs) "Wrong number of arguments to member function"
-        as <- forM (zip (tail ps) extraArgsExprs) $ \(ex, (argExpr, efs)) ->
-          implicitCast ctx argExpr ex <&> (,efs)
+        as <- forM (zip (tail ps) extraArgsExprs) $ \(ex, argExpr) ->
+          implicitCast ctx argExpr ex
         pure (lhs, as, r, case ef of H.TEffect x -> x; _ -> undefined)
       _ -> throw astLhsExpr "Type is not a function"
 
-    let effs = mconcat $ lhsEff : fnEffs : (snd <$> extraArgsExprs')
-    let effs' = flip filter effs $ \case
-          H.TNamed (TFqn "#builtins/:MutatesVars") [H.TLifetime l] ->
-            l < ctx.closureDepth
-          _ -> True
+    do
+      efs <- getEffects <&> (<> fnEffs)
+      assertM $ flip all efs $ \case H.TNamed {} -> True; _ -> False
+      setEffects $ flip filter efs $ \case
+        H.TNamed (TFqn "#builtins/:MutatesVars") [H.TLifetime l] ->
+          l < ctx.closureDepth
+        _ -> True
 
-    assertM $ flip all effs' $ \case H.TNamed {} -> True; _ -> False
-
-    pure ((H.EFnCall calleeExpr (lhs' : (fst <$> extraArgsExprs')), retType, sr), effs')
+    pure (H.EFnCall calleeExpr (lhs' : extraArgsExprs'), retType, sr)
   _ -> undefined
 
-visitETry :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitExprGetEffs :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitExprGetEffs a b c = do
+  effsBefore <- getEffects
+  setEffects def
+  e <- visitExpr a b c
+  effs <- getEffects
+  setEffects effsBefore
+  pure (e, effs)
+
+visitETry :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitETry ctx typeHint (theExpr, sr) = case theExpr of
   A.ETry tryExpr catches finallyMaybe -> do
-    (tryExpr', tryEffects) <- visitExpr ctx typeHint tryExpr
+    (tryExpr', tryEffects) <- visitExprGetEffs ctx typeHint tryExpr
     let tryType = snd3 tryExpr'
     let catchHint = typeToPType tryType
+
     remainingEffects <- newVar tryEffects
+
     catches' <- forM catches $ \(destrMaybe, varSr, e) -> case destrMaybe of
       Nothing -> do
         setVar remainingEffects def
-        e' <- visitExpr ctx catchHint e
+        e' <- visitExprGetEffs ctx catchHint e
         pure ((H.DIgnore, anyType, varSr), e')
       Just (astTypeExpr, destr) -> do
         exType <- visitTypeExpr ctx astTypeExpr
@@ -736,50 +764,55 @@ visitETry ctx typeHint (theExpr, sr) = case theExpr of
         destr' <- visitDestructure ctxVar exType destr
         ctx' <- getVar ctxVar
 
-        (e', effs) <- visitExpr ctx' catchHint e
+        (e', effs) <- visitExprGetEffs ctx' catchHint e
         e'' <- implicitCast ctx' e' tryType
-        remaining <- getVar remainingEffects
-        let remaining' = HS.delete (H.TNamed (TFqn "#builtins/:Throws") [exType]) remaining
-        setVar remainingEffects remaining'
+        modVar remainingEffects $ HS.delete (H.TNamed (TFqn "#builtins/:Throws") [exType])
         pure (destr', (e'', effs))
     finallyMaybe' <- forM finallyMaybe $ \e -> do
-      e'@((_, t, _), _) <- visitExpr ctx unitHint e
+      e'@((_, t, _), _) <- visitExprGetEffs ctx unitHint e
       unless (t == unitType) $ throw e "Finally block/expression may not produce a value"
       pure e'
-    let finallyEffects = fromMaybe def $ finallyMaybe' <&> snd
-    effs <-
+
+    let finallyEffects = maybe def snd finallyMaybe'
+
+    newEffs <-
       getVar remainingEffects
-        <&> \effs -> mconcat $ effs : finallyEffects : (toList catches' <&> (\(_, (_, es)) -> es))
-    let catches'' = catches' <&> \(d, (e, _)) -> (d, e)
-    pure ((H.ETry tryExpr' catches'' (finallyMaybe' <&> fst), tryType, sr), effs)
+        <&> \effs -> mconcat $ effs : finallyEffects : (toList catches' <&> snd . snd)
+
+    getEffects >>= \effs' -> setEffects $ newEffs <> effs'
+
+    let catches'' = catches' <&> second fst
+    pure (H.ETry tryExpr' catches'' (finallyMaybe' <&> fst), tryType, sr)
   _ -> undefined
 
-visitEThrow :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEThrow :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEThrow ctx typeHint (theExpr, sr) = case theExpr of
   A.EThrow e -> do
-    (e'@(_, exType, _), effs1) <- visitExpr ctx TUnknown e
+    e'@(_, exType, _) <- visitExpr ctx TUnknown e
     ex <- case pTypeToType typeHint of
       Just x -> pure x
       _ -> throw sr "Unable to deduce type"
-    let exEf = H.TNamed (TFqn "#builtins/:Throws") [exType]
-    pure ((H.EThrow e', ex, sr), HS.insert exEf effs1)
+    do
+      let exEf = H.TNamed (TFqn "#builtins/:Throws") [exType]
+      getEffects >>= \efs -> setEffects $ HS.insert exEf efs
+    pure (H.EThrow e', ex, sr)
   _ -> undefined
 
-visitEYield :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEYield :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEYield ctx _ (theExpr, sr) = case theExpr of
   A.EYield e -> do
     typeHint <- case ctx.iteratorYieldType of
       Just t -> pure $ typeToPType t
       _ -> throw sr "Yield is only valid within iterators"
-    (e', effs1) <- visitExpr ctx typeHint e
-    pure ((H.EYield e', unitType, sr), effs1)
+    e' <- visitExpr ctx typeHint e
+    pure (H.EYield e', unitType, sr)
   _ -> undefined
 
-visitEIndex :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEIndex :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEIndex ctx _ (theExpr, sr) = case theExpr of
   A.EIndex e i' -> do
     i <- if i' < 0 || i' >= 1000 then throw sr "Index out of range" else pure $ fromIntegral i'
-    (e'@(_, t, _), ef) <- visitExpr ctx TUnknown e
+    e'@(_, t, _) <- visitExpr ctx TUnknown e
     ts <- case t of
       H.TTuple ts -> pure $ toList ts
       H.TNamed {} -> do
@@ -791,13 +824,13 @@ visitEIndex ctx _ (theExpr, sr) = case theExpr of
           _ -> throw sr "Not a tuple or tuple-like data type"
       _ -> throw sr "Not a tuple or named type"
     t' <- case ts !? i of Just x -> pure x; _ -> throw sr "Index out of range"
-    pure ((if length ts == 1 then H.ENewtypeAccess e' else H.EIndex e' i, t', sr), ef)
+    pure (if length ts == 1 then H.ENewtypeAccess e' else H.EIndex e' i, t', sr)
   _ -> undefined
 
-visitEFieldAccess :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEFieldAccess :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEFieldAccess ctx _ (theExpr, sr) = case theExpr of
   A.EFieldAccess e fieldName -> do
-    (e'@(_, recordType, _), eff) <- visitExpr ctx TUnknown e
+    e'@(_, recordType, _) <- visitExpr ctx TUnknown e
     (dataTypeDef, (_, genArgs)) <- getDataDefType (snd e) recordType
     fields <- case dataTypeDef.dataCons of
       List1 (H.DataCons _ (H.RecordFields fs)) [] -> do
@@ -809,10 +842,10 @@ visitEFieldAccess ctx _ (theExpr, sr) = case theExpr of
       Just x -> pure x
       _ -> throw fieldName $ "No such field: " <> un (fst fieldName)
 
-    pure ((H.EFieldAccess e' fieldName, fieldType, sr), eff)
+    pure (H.EFieldAccess e' fieldName, fieldType, sr)
   _ -> undefined
 
-visitERecordInit :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitERecordInit :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitERecordInit ctx typeHint (theExpr, sr) = case theExpr of
   A.ERecordInit astDataCons astFieldValues -> do
     -- Use the type expression to get the data constructor & type
@@ -833,12 +866,11 @@ visitERecordInit ctx typeHint (theExpr, sr) = case theExpr of
         Just t -> pure t
         Nothing -> throw sr $ "Field '" <> un (fst n) <> "' not found in record"
       let hint = typeToPType expectedType
-      (e', efs) <- visitExpr ctx hint e
+      e' <- visitExpr ctx hint e
       e'' <- implicitCast ctx e' expectedType
-      pure (e'', efs)
+      pure e''
 
-    let fieldExprs = fieldValuesAndEffects <&> fst
-    let effs = mconcat $ snd <$> toList fieldValuesAndEffects
+    let fieldExprs = fieldValuesAndEffects
 
     -- Check for missing fields
     namesAndIdxs <- forM dConsFields $ \(fieldName, _) -> do
@@ -851,31 +883,31 @@ visitERecordInit ctx typeHint (theExpr, sr) = case theExpr of
             <> "' in record initialization"
 
     let e = H.ERecordInit dCons fieldExprs namesAndIdxs
-    pure ((e, recordType, sr), effs)
+    pure (e, recordType, sr)
   _ -> undefined
 
-visitEBreak :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEBreak :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEBreak ctx _ (theExpr, sr) = case theExpr of
   A.EBreak -> do
     lbl <- case ctx.inLoop of
       Just x -> pure x
       _ -> throw sr "Break expression is only valid within loops"
-    pure ((H.EBreak lbl, unreachableType, sr), def)
+    pure (H.EBreak lbl, unreachableType, sr)
   _ -> undefined
 
-visitEContinue :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEContinue :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEContinue ctx _ (theExpr, sr) = case theExpr of
   A.EContinue -> do
     lbl <- case ctx.inLoop of
       Just x -> pure x
       _ -> throw sr "Continue expression is only valid within loops"
-    pure ((H.EContinue lbl, unreachableType, sr), def)
+    pure (H.EContinue lbl, unreachableType, sr)
   _ -> undefined
 
-visitEUpdate :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEUpdate :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEUpdate ctx _ (theExpr, sr) = case theExpr of
   A.EUpdate e setters -> do
-    (e'@(_, lhsType, _), effs) <- visitExpr ctx TUnknown e
+    e'@(_, lhsType, _) <- visitExpr ctx TUnknown e
 
     -- Setter exprs may have side effects so they get stored in a list and referenced by index
     setterExprs <- newVar $ replicate (length setters) Nothing
@@ -894,9 +926,9 @@ visitEUpdate ctx _ (theExpr, sr) = case theExpr of
               -- Exact match for currentPrefix, just set the value
               oldExprMaybe <- getVar setterExprs <&> (!! i)
               assertM $ isNothing oldExprMaybe -- Parser should have caught this
-              (e'', efs) <- visitExpr ctx (typeToPType t) $ snd $ setters !! i
+              e'' <- visitExpr ctx (typeToPType t) $ snd $ setters !! i
               e''' <- implicitCast ctx e'' t
-              modVar setterExprs $ updateAt i $ const $ Just (e''', efs)
+              modVar setterExprs $ updateAt i $ const $ Just e'''
               pure $ H.EUpdateValue i
             _ -> case t of
               H.TTuple ts -> do
@@ -947,24 +979,23 @@ visitEUpdate ctx _ (theExpr, sr) = case theExpr of
         throw sr' $ "No such field: " <> acChain
 
     let setterExprs' = must $ sequence setterExprs''
-    let setterExprList = fst <$> setterExprs'
-    pure ((H.EUpdate e' setterExprList updatePart, lhsType, sr), mconcat $ effs : (snd <$> setterExprs'))
+    pure (H.EUpdate e' setterExprs' updatePart, lhsType, sr)
   _ -> undefined
 
-visitEExplicitType :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEExplicitType :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEExplicitType ctx _ (theExpr, _) = case theExpr of
   A.EExplicitType e t -> do
     t' <- visitTypeExpr ctx t
-    (e', ef) <- visitExpr ctx (typeToPType t') e
+    e' <- visitExpr ctx (typeToPType t') e
     e'' <- implicitCast ctx e' t'
-    pure (e'', ef)
+    pure e''
   _ -> undefined
 
-visitEAs :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitEAs :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEAs ctx _ (theExpr, sr) = case theExpr of
   A.EAs e t -> do
     toType <- visitTypeExpr ctx t
-    (e'@(_, actType, _), ef) <- visitExpr ctx TUnknown e
+    e'@(_, actType, _) <- visitExpr ctx TUnknown e
     let isIntType (TFqn fqn) = fqn == "#builtins/:Int" || fqn == "#builtins/:I32"
     let isNumericType fqn'@(TFqn fqn) = isIntType fqn' || fqn == "#builtins/:Real"
     let err = throw sr "Unknown conversion"
@@ -983,7 +1014,7 @@ visitEAs ctx _ (theExpr, sr) = case theExpr of
                 err
           else err
       _ -> err
-    pure (e'', ef)
+    pure e''
   _ -> undefined
 
 getTDef :: (MonadTc m, HasCallStack) => SrcRange -> H.Type -> m H.TDef
@@ -995,7 +1026,7 @@ getTDef sr t = case t of
     getTDefMaybe pkg' fqn <&> must
   _ -> throw sr "Not a named type"
 
-visitStmt :: (MonadTc m) => Var m Ctx -> PType -> A.Stmt -> m (H.Stmt, HashSet H.Type)
+visitStmt :: (MonadTc m) => Var m Ctx -> PType -> A.Stmt -> m H.Stmt
 visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
   A.SLet destr astTypeExprMaybe astExpr -> do
     ctx <- getVar ctxVar
@@ -1003,11 +1034,11 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
     typeMaybe <- forM astTypeExprMaybe $ visitTypeExpr ctx
     let typeHint' = case typeMaybe of Just x -> typeToPType x; _ -> TUnknown
 
-    (e', efs) <- visitExpr ctx typeHint' astExpr
+    e' <- visitExpr ctx typeHint' astExpr
     e''@(_, t, _) <- case typeMaybe of Just x -> implicitCast ctx e' x; _ -> pure e'
 
     d <- visitDestructure ctxVar t destr
-    pure ((H.SLet d e'', sr), efs)
+    pure (H.SLet d e'', sr)
   A.SRecLet name astTypeExpr astExpr -> do
     ctx <- getVar ctxVar
 
@@ -1018,23 +1049,23 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
     let ctx' = ctx {variables = Variable False name uid explicitType ctx.closureDepth : ctx.variables}
     setVar ctxVar ctx'
 
-    (e', efs) <- visitExpr ctx' typeHint' astExpr
+    e' <- visitExpr ctx' typeHint' astExpr
     e'' <- implicitCast ctx' e' explicitType
 
-    pure ((H.SRecLet name uid e'', sr), efs)
+    pure (H.SRecLet name uid e'', sr)
   A.SExpr astExpr -> do
     ctx <- getVar ctxVar
-    (e', ef) <- visitExpr ctx typeHint (astExpr, sr)
-    pure ((H.SExpr e', sr), ef)
+    e' <- visitExpr ctx typeHint (astExpr, sr)
+    pure (H.SExpr e', sr)
   A.SWhen astCondExpr astThenExpr -> do
     ctx <- getVar ctxVar
-    (condExpr@(_, shouldBeBool, _), ef0) <- visitExpr ctx boolHint astCondExpr
+    condExpr@(_, shouldBeBool, _) <- visitExpr ctx boolHint astCondExpr
     unless (shouldBeBool == boolType)
       $ throw astCondExpr ("Condition type must be Bool, got " <> typeToText shouldBeBool)
 
-    (thenExpr, ef1) <- visitExpr ctx TUnknown astThenExpr
+    thenExpr <- visitExpr ctx TUnknown astThenExpr
 
-    pure ((H.SWhen condExpr thenExpr, sr), ef0 <> ef1)
+    pure (H.SWhen condExpr thenExpr, sr)
   A.SAssign n@(name, nameSr) rhs -> do
     ctx <- getVar ctxVar
     var <- case findLocalVarByName ctx name of
@@ -1042,24 +1073,20 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
       _ -> throw nameSr $ "No such variable: " <> un name
     unless var.isMutable $ throw nameSr "Cannot assign to immutable variable"
 
-    (rhs', rhsEffs) <- visitExpr ctx (typeToPType var.typ) rhs
+    rhs' <- visitExpr ctx (typeToPType var.typ) rhs
 
     rhs'' <- implicitCast ctx rhs' var.typ
 
-    let effs =
-          if var.closureDepth < ctx.closureDepth
-            then
-              let l = H.TLifetime var.closureDepth
-                  mutEff = H.TNamed (TFqn "#builtins/:MutatesVars") [l]
-               in HS.insert mutEff rhsEffs
-            else
-              rhsEffs
+    when (var.closureDepth < ctx.closureDepth) $ do
+      let l = H.TLifetime var.closureDepth
+      let mutEff = H.TNamed (TFqn "#builtins/:MutatesVars") [l]
+      getEffects >>= \efs -> setEffects $ HS.insert mutEff efs
 
-    pure ((H.SAssign var.uid n rhs'', sr), effs)
+    pure (H.SAssign var.uid n rhs'', sr)
   A.SForEach {destr, inExpr, bodyExpr} -> do
     ctx <- getVar ctxVar
 
-    (inExpr'@(_, inType, _), effs1) <- visitExpr ctx TUnknown inExpr
+    inExpr'@(_, inType, _) <- visitExpr ctx TUnknown inExpr
 
     iterInnerType <- case inType of
       H.TNamed (TFqn "#builtins/:Iter") [t] -> pure t
@@ -1073,7 +1100,7 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
 
     label <- mkLocalVarUid
 
-    (bodyExpr'@(_, bodyType, _), effs2) <- visitExpr ctx' {inLoop = Just label} unitHint bodyExpr
+    bodyExpr'@(_, bodyType, _) <- visitExpr ctx' {inLoop = Just label} unitHint bodyExpr
 
     unless (bodyType == unitType || bodyType == unreachableType)
       $ addError
@@ -1089,9 +1116,9 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
               label
             }
 
-    pure ((s', sr), effs1 <> effs2)
+    pure (s', sr)
   A.SLoop e -> do
     ctx <- getVar ctxVar
     label <- mkLocalVarUid
-    (e', ef) <- visitExpr (ctx {inLoop = Just label}) TUnknown e
-    pure ((H.SLoop e' label, sr), ef)
+    e' <- visitExpr (ctx {inLoop = Just label}) TUnknown e
+    pure (H.SLoop e' label, sr)

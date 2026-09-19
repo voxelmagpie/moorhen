@@ -119,7 +119,7 @@ toMir' = do
                 generateWhereParamUid H.FromVDefWheres
               else pure $ M.LocalVarUid (-1)
           exprMaybe <- case eMaybe of
-            Just (H.VDefExpr {expr = (H.EClosure params e', t, sr)}) | vDef.isIterator -> do
+            Just (H.VDefExpr {expr = (H.EClosure params e' _captures, t, sr)}) | vDef.isIterator -> do
               -- Extract yield type from Iter[X] return type
               let yieldType = case vDef.type' of H.TFunc {ret = (H.TNamed _ [x])} -> x; _ -> undefined
               Just <$> cvtClosure t (Just yieldType) params e' sr
@@ -413,7 +413,7 @@ cvtExpr (e, t, sr) = do
       t' <- cvtType t
       e' <- mkApplyWhereClausesExpr sr t' nextWhereClauses indexed3
       pure $ fst e'
-    H.EClosure params e' -> do
+    H.EClosure params e' _captures -> do
       -- Iterators handled in toMir'
       cvtClosure t Nothing params e' sr <&> fst
     H.EFnCall (H.CalleeExpr (H.EDataCons (H.DataConsInfo {dcIdx}), calleeType, _)) args -> do
@@ -712,7 +712,7 @@ cvtStmt (stmt, sr) = case stmt of
         pure $ letStmt : destrStmts
   H.SRecLet name hirUid (expr, t, _) -> do
     case expr of
-      H.EClosure params e' -> do
+      H.EClosure params e' _captures -> do
         let uid' = M.LocalVarUid $ un hirUid
         expr' <- cvtClosure t Nothing params e' sr
         pure [(M.SRecLet uid' (Just $ first un name) expr', sr)]

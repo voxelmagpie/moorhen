@@ -6,6 +6,7 @@ module Front.Tc.VDef where
 
 import Control.Monad (forM, forM_, unless, when)
 import Data.HashMap.Strict qualified as HM
+import Data.HashSet qualified as HS
 import Data.Maybe (catMaybes, isJust, isNothing)
 import Front.Ast qualified as A
 import Front.Hir qualified as H
@@ -154,8 +155,17 @@ visitVDefExpr ctx vDef expr@(_, sr) = do
   let defType = must ctx.thisDefType
   resetLocalVarUids
   let ctx' = ctx {iteratorYieldType}
-  (e', ef) <- visitExpr ctx' (typeToPType defType) expr
-  unless (null ef) $ throw sr "Global variables may not have effects"
+  setCaptures def
+  setEffects def
+  setLocalDecls def
+  e' <- visitExpr ctx' (typeToPType defType) expr
+  caps <- getCaptures
+  effs <- getEffects
+  decls <- getLocalDecls
+
+  unless (null effs) $ throw sr "Global variables may not have effects"
+  assertM $ null $ caps `HS.difference` decls
+
   e'' <- implicitCast ctx' e' ex
   nextUid <- getNextLocalVarUid
   addVDefExpr fqn e'' nextUid

@@ -218,7 +218,7 @@ data Expr'
         fnIdx :: Int,
         nextWhereClauses :: WhereClauseTraitsList -- For generic trait functions
       }
-  | EClosure [Destructure] Expr
+  | EClosure {params :: [Destructure], e :: Expr, captures :: HashSet LocalVarUid}
   | EFnCall CalleeExpr [Expr]
   | EDoBlock [Stmt] (Maybe Expr)
   | EIf Expr Expr Expr

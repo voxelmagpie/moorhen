@@ -53,8 +53,18 @@ class (MonadTcImports m) => MonadTc m where
   addVDef :: VFqn -> H.VDef -> m ()
   addVDefExpr :: VFqn -> H.Expr -> Int -> m ()
   addExportedDefs :: Namespace -> [(VName, VFqn)] -> [(TName, H.TNameExport)] -> [H.Module] -> m ()
-  mkLocalVarUid :: m H.LocalVarUid
   getNextLocalVarUid :: m Int
   resetLocalVarUids :: m ()
   getBlockDeclMaybe :: Namespace -> TName -> m (Maybe BlockCached)
   addBlockDeclCache :: Namespace -> TName -> BlockCached -> m ()
+
+  addCapture :: H.LocalVarUid -> m ()
+  getCaptures :: m (HashSet H.LocalVarUid)
+  setCaptures :: HashSet H.LocalVarUid -> m ()
+
+  mkLocalVarUid :: m H.LocalVarUid
+  getLocalDecls :: m (HashSet H.LocalVarUid)
+  setLocalDecls :: HashSet H.LocalVarUid -> m ()
+
+  getEffects :: m (HashSet H.Type)
+  setEffects :: HashSet H.Type -> m ()

@@ -7,6 +7,7 @@ module Front.Tc.StateImpl where
 import Control.Exception (throwIO, try)
 import Control.Monad (forM, when)
 import Control.Monad.Reader (MonadIO (liftIO), MonadReader (ask), ReaderT (runReaderT), asks)
+import Data.HashSet qualified as HS
 import Data.HashTable.IO qualified as HT
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Maybe (isJust, mapMaybe)
@@ -32,6 +33,9 @@ data State = State
     depPkgs :: HashTable PkgName Hir,
     nextLocalVarUid :: IORef Int,
     blockDeclCache :: HashTable (Namespace, TName) BlockCached,
+    effects :: IORef (HashSet H.Type),
+    captures :: IORef (HashSet H.LocalVarUid),
+    localDecls :: IORef (HashSet H.LocalVarUid),
     -- Errors
     errorsRev :: IORef [Error]
   }
@@ -112,11 +116,6 @@ instance MonadTc Tc where
     vs' <- liftIO $ HT.fromList vs
     ts' <- liftIO $ HT.fromList ts
     liftIO $ HT.insert x ns (vs', ts', allModules)
-  mkLocalVarUid = do
-    nextLocalVarUid <- asks (.nextLocalVarUid)
-    i <- liftIO $ readIORef nextLocalVarUid
-    liftIO $ modifyIORef' nextLocalVarUid (+ 1)
-    pure $ LocalVarUid i
   getNextLocalVarUid = do
     nextLocalVarUid <- asks (.nextLocalVarUid)
     liftIO $ readIORef nextLocalVarUid
@@ -129,6 +128,35 @@ instance MonadTc Tc where
   addBlockDeclCache ns name x = do
     cache <- asks (.blockDeclCache)
     liftIO $ HT.insert cache (ns, name) x
+  mkLocalVarUid = do
+    nextLocalVarUid <- asks (.nextLocalVarUid)
+    localDeclsRef <- asks (.localDecls)
+    i <- liftIO $ readIORef nextLocalVarUid
+    liftIO $ modifyIORef' nextLocalVarUid (+ 1)
+    let id = LocalVarUid i
+    liftIO $ modifyIORef' localDeclsRef $ HS.insert id
+    pure id
+  getLocalDecls = do
+    localDeclsRef <- asks (.localDecls)
+    liftIO $ readIORef localDeclsRef
+  setLocalDecls xs = do
+    localDeclsRef <- asks (.localDecls)
+    liftIO $ writeIORef localDeclsRef xs
+  addCapture id = do
+    capturesRef <- asks (.captures)
+    liftIO $ modifyIORef' capturesRef $ HS.insert id
+  getCaptures = do
+    capturesRef <- asks (.captures)
+    liftIO $ readIORef capturesRef
+  setCaptures xs = do
+    capturesRef <- asks (.captures)
+    liftIO $ writeIORef capturesRef xs
+  getEffects = do
+    effectsRef <- asks (.effects)
+    liftIO $ readIORef effectsRef
+  setEffects xs = do
+    effectsRef <- asks (.effects)
+    liftIO $ writeIORef effectsRef xs
 
 instance MonadTcError Tc where
   getErrsListRev = do

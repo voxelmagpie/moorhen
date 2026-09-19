@@ -4,11 +4,10 @@
 
 module Front.Tc.Expr where
 
-import Data.HashSet (HashSet)
 import Front.Ast qualified as A
 import Front.Hir qualified as H
 import Front.Tc.Context
 import Front.Tc.PType
 import Front.Tc.State
 
-visitExpr :: (MonadTc m) => Ctx -> PType -> A.Expr -> m (H.Expr, HashSet H.Type)
+visitExpr :: (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr

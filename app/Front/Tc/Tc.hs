@@ -52,7 +52,7 @@ typeCheckPackage pkgName depPkgs allAsts = do
       let allAsts' = HM.fromList allAsts'''
       ir <- H.Hir pkgName <$> HT.new <*> HT.new <*> HT.new <*> HT.new <*> HT.new
       let inp = Inputs pkgName allAsts'
-      s <- TcSt.State ir inp depPkgs <$> newIORef 0 <*> HT.new <*> pure errs
+      s <- TcSt.State ir inp depPkgs <$> newIORef 0 <*> HT.new <*> newIORef def <*> newIORef def <*> newIORef def <*> pure errs
       res <- try @TcException $ runReaderT (typeCheckPackage' :: TcSt.Tc ()) s
       (allErrsAndWarnings, hasErrs) <- checkIfHasErrs
       pure (allErrsAndWarnings, if isLeft res || hasErrs then Nothing else Just s.ir)
