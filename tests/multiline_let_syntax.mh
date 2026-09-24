@@ -1,0 +1,22 @@
+//true
+
+let f
+	[A]
+	(
+		x: A
+		y : A
+	)
+	: Bool
+	where A: Eq
+->
+	x == y
+
+
+let main () : Bool
+	let g
+		(x : Int)
+		: Bool
+	->
+		f(x, 1)
+
+	g(1)
