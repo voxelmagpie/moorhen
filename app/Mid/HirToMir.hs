@@ -840,7 +840,7 @@ cvtType t'' = do
                   traitType <- mkTraitType fqn
                   pure (M.TProduct $ List2 M.TAny traitType [], [])
         H.TEffect _ -> error "Abstract type"
-        H.TLifetime _ -> error "Abstract type"
+        H.TLifetime {} -> error "Abstract type"
   fst <$> cvtType' [] t''
 
 mkTraitType :: (MonadToMir m) => TFqn -> m M.Type

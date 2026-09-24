@@ -86,11 +86,11 @@ typeContainsMutVarsEffect = \case
     ps'' || r'' || ef''
   H.TTuple ts ->
     any typeContainsMutVarsEffect ts
-  H.TNamed fqn _ | un fqn == "#builtins/:MutatesVars" -> True
+  H.TNamed fqn _ | un fqn == "#builtins/:MutVarEff" -> True
   H.TNamed _ gArgs ->
     any typeContainsMutVarsEffect gArgs
   H.TEffect efs -> any typeContainsMutVarsEffect efs
-  H.TLifetime _ -> False
+  H.TLifetime {} -> False
 
 -- Visits a type definition or type alias
 visitTDef :: (MonadTc m) => Ctx -> A.TDef -> m (TFqn, H.TDef)
@@ -245,7 +245,7 @@ visitTypeExpr ctx (astTypeExpr, sr) = case astTypeExpr of
   A.TLifetime name -> do
     case findLocalVarByName ctx name of
       Just var -> do
-        pure $ H.TLifetime var.closureDepth
+        pure $ H.TLifetime var.closureDepth var.scopeDepth
       _ -> throw sr $ "No such local variable: " <> un name
 
 verifyEffectAndConvertToList :: (MonadTc m, HasCallStack) => H.Type -> m (Maybe [H.Type])

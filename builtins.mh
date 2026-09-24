@@ -30,7 +30,7 @@ type Async = @(Impure, AsyncEffect)
 data @BlockingEffect
 type Blocking = @(Impure, BlockingEffect)
 data @Throws [Er]
-data @MutatesVars [`L]
+data @MutVarEff [`L]
 
 #deriving("Eq")
 data Ordering = OrdLt | OrdEq | OrdGt

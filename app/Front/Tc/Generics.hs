@@ -43,7 +43,7 @@ substituteGenerics gParams genType =
             $ HS.fromList
             $ flip concatMap (toList es)
             $ \e -> case f e of e'@(H.TNamed {}) -> [e']; H.TEffect xs -> toList xs; _ -> undefined
-        H.TLifetime _ -> genType
+        H.TLifetime {} -> genType
 
 -- Converts a concrete type to a partial type, substituting in hints for generic parameters
 genericTypeToPType :: [(TFqn, PType)] -> H.Type -> PType
@@ -56,7 +56,7 @@ genericTypeToPType gParams t =
           Nothing -> TNamedP fqn $ gArgs <&> f
           Just x -> x
         H.TEffect es -> TEffectP $ HS.fromList $ f <$> toList es
-        H.TLifetime _ -> TUnknown
+        H.TLifetime {} -> TUnknown
 
 tryCheckGenArgKinds :: (MonadTc m) => [(H.GenParam, (H.Type, SrcRange))] -> m (Either (Text, SrcRange) ())
 tryCheckGenArgKinds xs = do
@@ -72,7 +72,7 @@ tryCheckGenArgKinds xs = do
                 $ Just ("Expected type kind " <> tShow gp.kind <> ", got " <> tShow k, sr)
     case t of
       H.TEffect {} -> shouldBe EffectType
-      H.TLifetime _ -> shouldBe AbstractType
+      H.TLifetime {} -> shouldBe AbstractType
       H.TFunc {} -> shouldBe MonoType
       H.TTuple {} -> shouldBe MonoType
       H.TNamed fqn _ -> do

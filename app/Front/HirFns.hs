@@ -47,7 +47,7 @@ typeToText' shorten =
         TNamed fqn args -> (if shorten then shortenFqn (un fqn) else un fqn) <> "[" <> T.intercalate ", " (f <$> args) <> "]"
         TEffect es | HS.size es == 1 -> "@" <> T.concat (f <$> toList es)
         TEffect es -> "@(" <> T.intercalate "," (f <$> toList es) <> ")"
-        TLifetime l -> "'" <> tShow l
+        TLifetime _ l -> "'" <> tShow l
 
 typeToText :: Type -> Text
 typeToText = typeToText' True

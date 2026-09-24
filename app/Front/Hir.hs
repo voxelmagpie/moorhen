@@ -38,10 +38,20 @@ data Type
   | TTuple (List2 Type)
   | TNamed TFqn [Type] -- Corresponds to a TDef
   | TEffect (HashSet Type) -- All HashSet types are TNamed
-  | TLifetime Int
+  | TLifetime ClosureDepth ScopeDepth
   deriving (Show, Generic, Eq, Hashable)
 
 type TypeL = (Type, SrcRange)
+
+newtype ScopeDepth = ScopeDepth Int
+  deriving (Show, Generic)
+  deriving newtype (Eq, Hashable, Ord)
+  deriving anyclass (Newtype)
+
+newtype ClosureDepth = ClosureDepth Int
+  deriving (Show, Generic)
+  deriving newtype (Eq, Hashable, Ord)
+  deriving anyclass (Newtype)
 
 -- Top-level definitions
 

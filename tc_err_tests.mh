@@ -346,3 +346,14 @@ trait Tr
 let g (x : Tr) : Int
 	let y = x.f() // What is T?
 	0
+
+// --- //
+
+let main ()
+	let f =
+		let mut x = 0
+		\ ->
+			set x = 1
+			()
+
+	f() // x no longer exists

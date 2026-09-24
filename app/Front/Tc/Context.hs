@@ -37,7 +37,8 @@ data Ctx = Ctx
     -- Fields below are only set when type checking an expression
     --
     variables :: [Variable],
-    closureDepth :: Int,
+    closureDepth :: H.ClosureDepth,
+    scopeDepth :: H.ScopeDepth,
     inLoop :: Maybe H.LocalVarUid
   }
 
@@ -46,7 +47,8 @@ data Variable = Variable
     name :: VNameL,
     uid :: H.LocalVarUid,
     typ :: H.Type,
-    closureDepth :: Int
+    closureDepth :: H.ClosureDepth,
+    scopeDepth :: H.ScopeDepth
   }
   deriving (Show)
 
@@ -70,7 +72,8 @@ mkFileCtx namespace (thisAst, thisAstImports) tcIn =
       thisDefType = def,
       iteratorYieldType = def,
       variables = def,
-      closureDepth = 0,
+      closureDepth = H.ClosureDepth 0,
+      scopeDepth = H.ScopeDepth 0,
       inLoop = Nothing
     }
 

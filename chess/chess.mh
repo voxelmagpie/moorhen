@@ -804,7 +804,7 @@ let pickAMove
 			worst : Real
 		)
 		: Maybe[(Move, AnalysedState, Real)]
-		@MutatesVars['moveCount]
+		@MutVarEff['moveCount]
 	->
 		let mut chosenMove : Maybe[(Move, AnalysedState, Real)] = None
 		let mut chosenMoveEval = if pickBest then negInf else inf

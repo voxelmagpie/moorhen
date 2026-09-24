@@ -157,6 +157,9 @@ instance MonadTc Tc where
   setEffects xs = do
     effectsRef <- asks (.effects)
     liftIO $ writeIORef effectsRef xs
+  addEffect ef = do
+    effectsRef <- asks (.effects)
+    liftIO $ modifyIORef' effectsRef $ HS.insert ef
 
 instance MonadTcError Tc where
   getErrsListRev = do

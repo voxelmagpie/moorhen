@@ -17,7 +17,7 @@ data PType
   | TTupleP (List2 PType)
   | TNamedP TFqn [PType]
   | TEffectP (HashSet PType)
-  | TLifetimeP Int
+  | TLifetimeP H.ClosureDepth H.ScopeDepth
   deriving (Show, Generic, Eq, Hashable)
 
 typeToPType :: Type -> PType
@@ -26,7 +26,7 @@ typeToPType = \case
   TTuple ts -> TTupleP $ typeToPType <$> ts
   TNamed f ts -> TNamedP f (typeToPType <$> ts)
   TEffect es -> TEffectP $ HS.fromList $ typeToPType <$> toList es
-  TLifetime x -> TLifetimeP x
+  TLifetime x y -> TLifetimeP x y
 
 pTypeToType :: PType -> Maybe H.Type
 pTypeToType = \case
@@ -39,7 +39,7 @@ pTypeToType = \case
   TTupleP ts -> mapM pTypeToType ts <&> TTuple
   TNamedP fqn ts -> mapM pTypeToType ts <&> TNamed fqn
   TEffectP es -> mapM pTypeToType (toList es) <&> (HS.fromList >>> TEffect)
-  TLifetimeP x -> pure $ H.TLifetime x
+  TLifetimeP x y -> pure $ H.TLifetime x y
 
 instance Semigroup PType where
   TUnknown <> x = x

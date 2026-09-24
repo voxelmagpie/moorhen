@@ -24,7 +24,7 @@ visitPattern ctxVar t (astPat, sr) = do
     A.PIgnore -> pure (H.PIgnore, t, sr)
     A.PName name -> do
       uid <- mkLocalVarUid
-      modVar ctxVar $ \ctx -> ctx {variables = Variable False (name, sr) uid t ctx.closureDepth : ctx.variables}
+      modVar ctxVar $ \ctx -> ctx {variables = Variable False (name, sr) uid t ctx.closureDepth ctx.scopeDepth : ctx.variables}
       pure (H.PName name uid, t, sr)
     A.PTuple ps -> do
       ts <- case t of
@@ -72,11 +72,11 @@ visitDestructure ctxVar t (destr, sr) = case destr of
   A.DName name mut -> do
     uid <- mkLocalVarUid
     ctx <- getVar ctxVar
-    setVar ctxVar $ ctx {variables = Variable mut (name, sr) uid t ctx.closureDepth : ctx.variables}
+    setVar ctxVar $ ctx {variables = Variable mut (name, sr) uid t ctx.closureDepth ctx.scopeDepth : ctx.variables}
     pure (H.DName name uid mut, t, sr)
   A.DAs name mut d -> do
     uid <- mkLocalVarUid
-    modVar ctxVar $ \ctx -> ctx {variables = Variable mut name uid t ctx.closureDepth : ctx.variables}
+    modVar ctxVar $ \ctx -> ctx {variables = Variable mut name uid t ctx.closureDepth ctx.scopeDepth : ctx.variables}
     d' <- visitDestructure ctxVar t d
     pure (H.DAs name uid mut d', t, sr)
   A.DTupleLike ds -> case t of

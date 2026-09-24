@@ -68,3 +68,4 @@ class (MonadTcImports m) => MonadTc m where
 
   getEffects :: m (HashSet H.Type)
   setEffects :: HashSet H.Type -> m ()
+  addEffect :: H.Type -> m ()

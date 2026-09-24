@@ -155,6 +155,18 @@ visitELitList ctx typeHint (theExpr, sr) = case theExpr of
         pure (H.ELitList [], t, sr)
   _ -> undefined
 
+-- Called when a local variable is referenced in the handling of A.EVar
+-- This function exists because EFnCall handles EVar itself
+usedLocalVar :: (MonadTc m) => Ctx -> Variable -> SrcRange -> m (H.Expr', H.Type, SrcRange)
+usedLocalVar ctx var sr = do
+  when (var.closureDepth /= ctx.closureDepth) $ addCapture var.uid
+
+  when (var.isMutable && var.closureDepth < ctx.closureDepth) $ do
+    let l = H.TLifetime var.closureDepth var.scopeDepth
+    addEffect $ H.TNamed (TFqn "#builtins/:MutVarEff") [l]
+
+  pure (H.EVar var.uid (un $ fst var.name), var.typ, sr)
+
 visitEVar :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEVar ctx typeHint (theExpr, sr) = case theExpr of
   A.EVar qualMaybe name genArgs -> do
@@ -183,17 +195,16 @@ visitEVar ctx typeHint (theExpr, sr) = case theExpr of
     case qualMaybe of
       Just _ -> findGlobal
       _ -> case findLocalVarByName ctx name of
-        Just v -> do
+        Just var -> do
           unless (null genArgs) $ throw sr "Local variables cannot be generic"
-          when (v.closureDepth /= ctx.closureDepth) $ addCapture v.uid
-          pure (H.EVar v.uid (un name), v.typ, sr)
+          usedLocalVar ctx var sr
         _ -> findGlobal
   _ -> undefined
 
 visitEClosure :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEClosure outerCtx typeHint (theExpr, sr) = case theExpr of
   A.EClosure params astExpr -> do
-    let closureDepth = outerCtx.closureDepth + 1
+    let closureDepth = H.ClosureDepth $ un outerCtx.closureDepth + 1
     -- inLoop is to disambiguate the record update :/
     let ctx = outerCtx {closureDepth, inLoop = outerCtx.inLoop}
 
@@ -257,9 +268,8 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
         case qualMaybe of
           Just _ -> findGlobal
           _ -> case findLocalVarByName ctx name of
-            Just v -> do
-              when (v.closureDepth /= ctx.closureDepth) $ addCapture v.uid
-              pure $ Left (H.EVar v.uid (un name), v.typ, sr)
+            Just var -> do
+              Left <$> usedLocalVar ctx var sr
             _ -> findGlobal
       A.EDataCons qualMaybe name [] ->
         getDataCons' ctx typeHint qualMaybe name $ \fqn dataTypeDef -> do
@@ -323,8 +333,10 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
       efs <- getEffects <&> (<> fnEffs)
       assertM $ flip all efs $ \case H.TNamed {} -> True; _ -> False
       setEffects $ flip filter efs $ \case
-        H.TNamed (TFqn "#builtins/:MutatesVars") [H.TLifetime l] ->
-          l < ctx.closureDepth
+        H.TNamed (TFqn "#builtins/:MutVarEff") [H.TLifetime closureDepth scopeDepth] ->
+          assert
+            (scopeDepth <= ctx.scopeDepth && closureDepth <= ctx.closureDepth)
+            (closureDepth < ctx.closureDepth)
         _ -> True
 
     pure (H.EFnCall (H.CalleeExpr calleeExpr) argsExprs', retType, sr)
@@ -333,15 +345,31 @@ visitEFnCall ctx typeHint (theExpr, sr) = case theExpr of
 visitEDoBlock :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
 visitEDoBlock ctx typeHint (theExpr, sr) = case theExpr of
   A.EDoBlock ss eMaybe -> do
-    ctxVar <- newVar ctx
+    let thisScopeDepth = H.ScopeDepth $ un ctx.scopeDepth + 1
+    ctxVar <- newVar $ ctx {scopeDepth = thisScopeDepth, inLoop = ctx.inLoop}
     ss' <- forM ss $ \s -> do
       visitStmt ctxVar TUnknown s
     ctx' <- getVar ctxVar
     e <- forM eMaybe $ visitExpr ctx' typeHint
-    let t = case e of
+    let doBlkType = case e of
           Just (_, t', _) -> t'
           _ -> unitType
-    pure (H.EDoBlock ss' e, t, sr)
+
+    let hasMutEff t =
+          let isMutEff = \case
+                H.TNamed (TFqn "#builtins/:MutVarEff") [H.TLifetime _ l] | l >= thisScopeDepth -> True
+                _ -> False
+           in case t of
+                H.TFunc {ret, eff = H.TEffect effs} -> hasMutEff ret || any isMutEff effs
+                H.TFunc {} -> undefined
+                H.TTuple xs -> any hasMutEff xs
+                H.TNamed _ gps -> any hasMutEff gps
+                H.TEffect effs -> any isMutEff effs
+                H.TLifetime {} -> False
+
+    when (hasMutEff doBlkType) $ throw (maybe sr snd eMaybe) "Reference outlives mutable local variable"
+
+    pure (H.EDoBlock ss' e, doBlkType, sr)
   _ -> undefined
 
 visitEIf :: forall m. (MonadTc m) => Ctx -> PType -> A.Expr -> m H.Expr
@@ -727,8 +755,8 @@ visitEMemberCall ctx typeHint (theExpr, sr) = case theExpr of
       efs <- getEffects <&> (<> fnEffs)
       assertM $ flip all efs $ \case H.TNamed {} -> True; _ -> False
       setEffects $ flip filter efs $ \case
-        H.TNamed (TFqn "#builtins/:MutatesVars") [H.TLifetime l] ->
-          l < ctx.closureDepth
+        H.TNamed (TFqn "#builtins/:MutVarEff") [H.TLifetime closureDepth _] ->
+          closureDepth < ctx.closureDepth
         _ -> True
 
     pure (H.EFnCall calleeExpr (lhs' : extraArgsExprs'), retType, sr)
@@ -792,9 +820,8 @@ visitEThrow ctx typeHint (theExpr, sr) = case theExpr of
     ex <- case pTypeToType typeHint of
       Just x -> pure x
       _ -> throw sr "Unable to deduce type"
-    do
-      let exEf = H.TNamed (TFqn "#builtins/:Throws") [exType]
-      getEffects >>= \efs -> setEffects $ HS.insert exEf efs
+
+    addEffect $ H.TNamed (TFqn "#builtins/:Throws") [exType]
     pure (H.EThrow e', ex, sr)
   _ -> undefined
 
@@ -1046,7 +1073,7 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
     let typeHint' = typeToPType explicitType
 
     uid <- mkLocalVarUid
-    let ctx' = ctx {variables = Variable False name uid explicitType ctx.closureDepth : ctx.variables}
+    let ctx' = ctx {variables = Variable False name uid explicitType ctx.closureDepth ctx.scopeDepth : ctx.variables}
     setVar ctxVar ctx'
 
     e' <- visitExpr ctx' typeHint' astExpr
@@ -1078,9 +1105,8 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
     rhs'' <- implicitCast ctx rhs' var.typ
 
     when (var.closureDepth < ctx.closureDepth) $ do
-      let l = H.TLifetime var.closureDepth
-      let mutEff = H.TNamed (TFqn "#builtins/:MutatesVars") [l]
-      getEffects >>= \efs -> setEffects $ HS.insert mutEff efs
+      let l = H.TLifetime var.closureDepth var.scopeDepth
+      addEffect $ H.TNamed (TFqn "#builtins/:MutVarEff") [l]
 
     pure (H.SAssign var.uid n rhs'', sr)
   A.SForEach {destr, inExpr, bodyExpr} -> do
