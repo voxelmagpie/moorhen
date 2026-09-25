@@ -2,14 +2,17 @@
 -- License, v. 2.0. If a copy of the MPL was not distributed with this
 -- file, You can obtain one at https://mozilla.org/MPL/2.0/.
 {- HLINT ignore "Use maybe" -}
+{-# LANGUAGE ImplicitParams #-}
 
--- AST Pretty printing functions
+-- | AST Pretty printing
+-- | The output is *not* valid Moorhen code and will not parse
+-- | This is intended for debugging for parser
 module Front.AstPp where
 
 import Data.HashMap.Strict qualified as HM
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
-import Data.Text (intercalate, unlines, unwords)
+import Data.Text (intercalate, unwords)
 import Data.Text qualified as T
 import Front.Ast
 import Front.TypeKind
@@ -22,11 +25,20 @@ ppAst :: Ast -> Text
 ppAst ast =
   let vDefs = sortOn ((.name) >>> fst >>> un) (HM.elems ast.vDefs)
       tDefs = sortOn ((.name) >>> fst >>> un) (HM.elems ast.tDefs)
-   in T.concat [unlines $ ppVDef <$> vDefs, "\n", unlines $ ppTDef <$> tDefs, "\n"]
+   in T.concat [T.concat $ (let ?ind = 0 in ppVDef) <$> vDefs, "\n", T.concat $ ppTDef <$> tDefs, "\n"]
 
-ppVDef :: VDef -> Text
+ppVDef :: (?ind :: Int) => VDef -> Text
 ppVDef vDef =
-  T.concat [if vDef.isIterator then "iterator " else "let ", ppGenParams vDef.genParams, un $ fst vDef.name, case vDef.op of Just (o, _) -> " " <> un o; _ -> "", t, wh, case vDef.expr of Just e -> " = " <> ppExpr e; _ -> ""]
+  T.concat
+    [ if vDef.isIterator then "iterator " else "let ",
+      ppGenParams vDef.genParams,
+      un $ fst vDef.name,
+      case vDef.op of Just (o, _) -> " " <> un o; _ -> "",
+      t,
+      wh,
+      case vDef.expr of Just e -> " = " <> (let ?ind = ?ind + 1 in ppExpr e); _ -> "",
+      "\n\n"
+    ]
   where
     t = case vDef.typeExpr of
       Just x -> " : " <> ppType x
@@ -51,19 +63,19 @@ ppTDef :: TDef -> Text
 ppTDef tDef =
   let genericStr = ppGenParams tDef.genParams
    in case tDef.tDef of
-        TypeAliasDecl t -> T.concat ["type ", genericStr, un $ fst tDef.name, " = ", ppType t]
-        TypeDecl cons ds -> T.concat ["data ", genericStr, un $ fst tDef.name, " = ", intercalate " | " (ppDataCons <$> toList cons), ds']
+        TypeAliasDecl t -> T.concat ["type ", genericStr, un $ fst tDef.name, " = ", ppType t, "\n\n"]
+        TypeDecl cons ds -> T.concat ["data ", genericStr, un $ fst tDef.name, " = ", intercalate " | " (ppDataCons <$> toList cons), ds', "\n\n"]
           where
             ds' = if null ds then "" else "\n\tderiving " <> T.intercalate "," (ds <&> \x -> "\"" <> fst x <> "\"")
-        BuiltinTypeDecl -> T.concat ["builtin ", genericStr, un $ fst tDef.name]
-        Module t defs sigList wh assocTypes -> T.concat ["mod ", genericStr, un $ fst tDef.name, " for ", ppType t, sigList', ppWheres wh, "\n", assocTypes', defs', "\n"]
+        BuiltinTypeDecl -> T.concat ["builtin ", genericStr, un $ fst tDef.name, "\n\n"]
+        Module t defs sigList wh assocTypes -> T.concat ["mod ", genericStr, un $ fst tDef.name, " for ", ppType t, sigList', ppWheres wh, "\n", assocTypes', defs', "\n\n"]
           where
-            defs' = T.unlines $ toList defs.vDefsOrdered <&> (ppVDef >>> ("\t" <>))
+            defs' = T.concat $ toList defs.vDefsOrdered <&> ((let ?ind = 1 in ppVDef) >>> ("\t" <>))
             sigList' = if null sigList then "" else " : " <> T.intercalate ", " (ppType <$> sigList)
             assocTypes' = T.unlines $ sortOn (un . fst) (HM.toList assocTypes) <&> \(n, (_, t')) -> "\ttype " <> un n <> " = " <> ppType t'
-        Trait defs sigList wh assocTypes -> T.concat ["trait ", genericStr, un $ fst tDef.name, sigList', ppWheres wh, "\n", assocTypes', defs', "\n"]
+        Trait defs sigList wh assocTypes -> T.concat ["trait ", genericStr, un $ fst tDef.name, sigList', ppWheres wh, "\n", assocTypes', defs', "\n\n"]
           where
-            defs' = T.unlines $ toList defs.vDefsOrdered <&> (ppVDef >>> ("\t" <>))
+            defs' = T.concat $ toList defs.vDefsOrdered <&> ((let ?ind = 1 in ppVDef) >>> ("\t" <>))
             sigList' = if null sigList then "" else " : " <> T.intercalate ", " (ppType <$> sigList)
             assocTypes' = T.unlines $ sortOn un (HM.keys assocTypes) <&> \n -> "\ttype " <> un n
 
@@ -81,7 +93,7 @@ ppType (TFunc args ret ef, _) = T.concat ["(\\", intercalate ", " (ppType <$> ar
   where
     ef' = case ef of
       [] -> ""
-      ts -> "@(" <> T.intercalate ", " (ts <&> ppType) <> ")"
+      ts -> " @(" <> T.intercalate ", " (ts <&> ppType) <> ")"
 ppType (TNamed qualMaybe name params, _) =
   T.concat
     [ maybe "" (fst >>> un >>> (<> ".")) qualMaybe,
@@ -96,7 +108,7 @@ ppType (TLifetime n, _) = "'" <> un n
 ppVarDecl :: Destructure -> Maybe TypeExpr -> Text
 ppVarDecl d t = ppDestructure d <> (case t of Just t' -> " : " <> ppType t'; _ -> "")
 
-ppExpr :: Expr -> Text
+ppExpr :: (?ind :: Int) => Expr -> Text
 ppExpr (ELitInt n, _) = tShow n
 ppExpr (ELitFloat t, _) = t
 ppExpr (ELitBool b, _) = tShow b
@@ -111,23 +123,32 @@ ppExpr (EClosure params body, _) = T.concat ["\\", intercalate ", " (params <&> 
 ppExpr (EFnCall f args, _) = T.concat [ppExpr f, "(", argsStr, ")"]
   where
     argsStr = if null args then "" else T.intercalate ", " $ ppExpr <$> args
-ppExpr (EDoBlock [] (Just e), _) = ppExpr e
 ppExpr (EDoBlock [] Nothing, _) = "{}"
-ppExpr (EDoBlock stmts eMaybe, _) = T.concat ["{ ", T.concat $ toList stmts <&> \s -> ppStmt s <> " ; ", case eMaybe of Just x -> ppExpr x <> " "; _ -> "", "}"]
+ppExpr (EDoBlock [] (Just e), _) = ppExpr e
+ppExpr (EDoBlock stmts eMaybe, _) =
+  T.concat
+    [ "{\n",
+      T.concat $ toList stmts <&> \s -> T.replicate (?ind + 1) "\t" <> (let ?ind = ?ind + 1 in ppStmt s) <> ";\n",
+      case eMaybe of Just e' -> T.replicate (?ind + 1) "\t" <> (let ?ind = ?ind + 1 in ppExpr e') <> "\n"; _ -> "",
+      T.replicate ?ind "\t",
+      "}"
+    ]
 ppExpr (EIf cond t f, _) = T.concat ["(if ", ppExpr cond, " then ", ppExpr t, " else ", ppExpr f, ")"]
 ppExpr (ETuple es, _) = T.concat ["(", intercalate ", " (ppExpr <$> toList es), ")"]
 ppExpr (EAnd l r, _) = T.concat ["(", ppExpr l, " and ", ppExpr r, ")"]
 ppExpr (EOr l r, _) = T.concat ["(", ppExpr l, " or ", ppExpr r, ")"]
-ppExpr (EMatch e ps, _) = "case " <> ppExpr e <> " of " <> T.intercalate ", " (ppPatternBranch <$> toList ps)
+ppExpr (EMatch e ps, _) = "match " <> ppExpr e <> " { " <> T.intercalate ", " (ppPatternBranch <$> toList ps) <> " }"
 ppExpr (EDataCons qualMaybe name gArgs, _) =
   T.concat
     [ maybe "" (fst >>> un >>> (<> ".")) qualMaybe,
       un $ fst name,
       if null gArgs then "" else T.concat ["[", intercalate ", " (ppType <$> gArgs), "]"]
     ]
-ppExpr (EMemberCall lhs (name, _) args, _) = T.concat [ppExpr lhs, ".", getName name, "(", argsStr, ")"]
+ppExpr (EMemberCall lhs (Right op, _) [], _) = T.concat [un op, "(", ppExpr lhs, ")"]
+ppExpr (EMemberCall lhs (Right op, _) [rhs], _) = T.concat ["(", ppExpr lhs, un op, ppExpr rhs, ")"]
+ppExpr (EMemberCall _ (Right _, _) _, _) = undefined
+ppExpr (EMemberCall lhs (Left name, _) args, _) = T.concat [ppExpr lhs, ".", un name, "(", argsStr, ")"]
   where
-    getName = \case Left x -> un x; Right x -> un x
     argsStr = if null args then "" else T.intercalate ", " $ ppExpr <$> args
 ppExpr (ETry e cs fin, _) = T.concat ["try ", ppExpr e, cs', fin']
   where
@@ -158,7 +179,7 @@ ppExpr (EUpdate e setters, _) = ppExpr e <> "{ " <> T.intercalate ", " (setters 
 ppExpr (EExplicitType e t, _) = ppExpr e <> " : " <> ppType t
 ppExpr (EAs e t, _) = ppExpr e <> " as " <> ppType t
 
-ppPatternBranch :: MatchBranch -> Text
+ppPatternBranch :: (?ind :: Int) => MatchBranch -> Text
 ppPatternBranch b = ppPattern b.pattern <> g <> " -> " <> ppExpr b.expr
   where
     g = case b.guard of Just x -> " | " <> ppExpr x; _ -> ""
@@ -170,15 +191,15 @@ ppPattern (PTuple ps, _) = T.concat ["(", intercalate ", " (ppPattern <$> toList
 ppPattern (PDataCons (n, _) ps, _) = un n <> "(" <> T.intercalate ", " (ppPattern <$> ps) <> ")"
 ppPattern (PRecord (n', _) fields, _) = T.concat [un n', "{", intercalate ", " $ fields <&> \((n, _), p) -> un n <> " = " <> ppPattern p, "}"]
 
-ppStmt :: Stmt -> Text
+ppStmt :: (?ind :: Int) => Stmt -> Text
 ppStmt (SLet destr typ expr, _) =
   T.concat ["let ", ppDestructure destr, case typ of Just x -> " : " <> ppType x; _ -> "", " = ", ppExpr expr]
 ppStmt (SRecLet name typ expr, _) =
   T.concat ["let rec ", un $ fst name, " :: ", ppType typ, " = ", ppExpr expr]
 ppStmt (SExpr expr, sr) = ppExpr (expr, sr)
-ppStmt (SWhen condExpr thenExpr, _) = T.concat ["when ", ppExpr condExpr, " do ", ppExpr thenExpr]
+ppStmt (SWhen condExpr thenExpr, _) = T.concat ["when ", ppExpr condExpr, " then ", ppExpr thenExpr]
 ppStmt (SAssign (lhs, _) rhs, _) = T.concat ["set ", un lhs, " = ", ppExpr rhs]
-ppStmt (SForEach {destr, inExpr, bodyExpr}, _) = T.concat ["foreach ", ppDestructure destr, " in ", ppExpr inExpr, " do ", ppExpr bodyExpr]
+ppStmt (SForEach {destr, inExpr, bodyExpr}, _) = T.concat ["foreach ", ppDestructure destr, " in ", ppExpr inExpr, " then ", ppExpr bodyExpr]
 ppStmt (SLoop e, _) = T.concat ["loop ", ppExpr e]
 
 ppDestructure :: Destructure -> Text

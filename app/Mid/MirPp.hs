@@ -1,12 +1,14 @@
 -- This Source Code Form is subject to the terms of the Mozilla Public
 -- License, v. 2.0. If a copy of the MPL was not distributed with this
 -- file, You can obtain one at https://mozilla.org/MPL/2.0/.
+{-# LANGUAGE ImplicitParams #-}
 
--- MIR pretty printing functions
+-- | MIR pretty printing functions
 module Mid.MirPp where
 
 import Data.HashTable.IO qualified as HT
 import Data.List (sortOn)
+import Data.Maybe (isJust)
 import Data.Text qualified as T
 import MhPrelude
 import Mid.Mir
@@ -18,13 +20,17 @@ import Strings
 ppMir :: Mir -> IO Text
 ppMir mir = do
   vDefs <- HT.toList mir.vDefs
-  pure $ T.concat $ un mir.name : "\n\n" : (sortOn (fst >>> un) vDefs <&> (snd >>> ppVDef))
+  pure
+    $ T.concat
+    $ un mir.name
+    : "\n\n"
+    : (sortOn (fst >>> un) vDefs <&> (snd >>> ppVDef))
 
 ppVDef :: VDef -> Text
 ppVDef v = T.concat ["let ", un v.fqn, " : ", ppType v.type', rhs, "\n\n"]
   where
     rhs = case v.exprMaybe of
-      Just e -> " =\n\t" <> ppExpr e
+      Just e -> " =\n\t" <> (let ?ind = 1 in ppExpr e)
       Nothing -> ""
 
 ppType :: Type -> Text
@@ -59,22 +65,27 @@ ppConst = \case
   CVec cs -> "[" <> T.intercalate ", " (ppConst <$> cs) <> "]"
   CFn fqn -> un fqn
 
-ppExpr :: Expr -> Text
+ppExpr :: (?ind :: Int) => Expr -> Text
 ppExpr (e, _) = case e of
   ELoadConst c -> ppConst c
   EVec es -> "[" <> T.intercalate ", " (ppExpr <$> es) <> "]"
   EVar uid n -> ppVarWithName uid n
   EGlobal fqn -> un fqn
-  EClosure fn -> T.concat ["\\", paramsStr, " -> ", bodyStr]
+  EClosure fn -> T.concat [if isJust fn.yieldType then "co" else "", "\\", paramsStr, " -> ", bodyStr]
     where
       paramsStr = T.intercalate ", " $ fn.params <&> \(uid, n, t, _) -> ppVarWithNameL uid n <> " : " <> ppType t
       bodyStr = ppExpr fn.expr
   EFnCall f args ia _ -> ppExpr f <> "(" <> T.intercalate ", " (ppExpr <$> args) <> ")" <> if ia then " async" else ""
-  EDoBlock stmts eMaybe -> T.concat ["{ ", T.concat (stmts <&> \s -> ppStmt s <> "; "), eMaybeStr, "}"]
-    where
-      eMaybeStr = case eMaybe of
-        Just e' -> ppExpr e' <> " "
-        Nothing -> ""
+  EDoBlock [] Nothing -> "{}"
+  EDoBlock [] (Just e') -> "{" <> ppExpr e' <> "}"
+  EDoBlock stmts eMaybe ->
+    T.concat
+      [ "{\n",
+        T.concat (stmts <&> \s -> T.replicate (?ind + 1) "\t" <> (let ?ind = ?ind + 1 in ppStmt s) <> ";\n"),
+        case eMaybe of Just e' -> T.replicate (?ind + 1) "\t" <> (let ?ind = ?ind + 1 in ppExpr e') <> "\n"; Nothing -> "",
+        T.replicate ?ind "\t",
+        "}"
+      ]
   EIf c t f _ -> T.concat ["(if ", ppExpr c, " then ", ppExpr t, " else ", ppExpr f, ")"]
   EProduct es -> "(" <> T.intercalate ", " (ppExpr <$> toList es) <> ")"
   ESum _ i e' -> "sum<" <> tShow i <> ">(" <> ppExpr e' <> ")"
@@ -99,7 +110,7 @@ ppExpr (e, _) = case e of
   EIntToF64 e' -> "intToF64(" <> ppExpr e' <> ")"
   ECastNumber e' t -> "cast(" <> ppExpr e' <> " - to - " <> ppType t <> ")"
 
-ppStmt :: Stmt -> Text
+ppStmt :: (?ind :: Int) => Stmt -> Text
 ppStmt (s, _) = case s of
   SLet uid nameMaybe mut e' -> T.concat ["let ", if mut then "mut " else "", ppVarWithNameL uid nameMaybe, " = ", ppExpr e']
   SRecLet uid nameMaybe e' -> T.concat ["let rec ", ppVarWithNameL uid nameMaybe, " = ", ppExpr e']
