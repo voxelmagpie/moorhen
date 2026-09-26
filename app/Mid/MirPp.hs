@@ -117,9 +117,18 @@ ppStmt (s, _) = case s of
   SLetUninit uid t -> T.concat ["let uninit ", ppVar uid, " : ", ppType t]
   SExpr e' -> ppExpr e'
   SAssign uid nameMaybe e' -> T.concat [ppVarWithNameL uid nameMaybe, " = ", ppExpr e']
-  SLoop e' label -> T.concat [ppVar label, ": loop -> ", ppExpr e']
+  SLoop e' label -> T.concat [ppVar label, ": loop\n", T.replicate (?ind + 1) "\t", let ?ind = ?ind + 1 in ppExpr e']
   SForEach {iterExpr, elemUid, elemNameMaybe, label, bodyExpr} ->
-    T.concat [ppVar label, ": foreach ", ppVarWithNameL elemUid elemNameMaybe, " in ", ppExpr iterExpr, " -> ", ppExpr bodyExpr]
+    T.concat
+      [ ppVar label,
+        ": foreach ",
+        ppVarWithNameL elemUid elemNameMaybe,
+        " in ",
+        ppExpr iterExpr,
+        "\n",
+        T.replicate (?ind + 1) "\t",
+        let ?ind = ?ind + 1 in ppExpr bodyExpr
+      ]
 
 ppVar :: LocalVarUid -> Text
 ppVar uid = "$" <> tShow (un uid)
