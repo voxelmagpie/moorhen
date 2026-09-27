@@ -117,6 +117,7 @@ ppStmt (s, _) = case s of
   SLetUninit uid t -> T.concat ["let uninit ", ppVar uid, " : ", ppType t]
   SExpr e' -> ppExpr e'
   SAssign uid nameMaybe e' -> T.concat [ppVarWithNameL uid nameMaybe, " = ", ppExpr e']
+  SBreakBlock e' label -> T.concat [ppVar label, ": break-block\n", T.replicate (?ind + 1) "\t", let ?ind = ?ind + 1 in ppExpr e']
   SLoop e' label -> T.concat [ppVar label, ": loop\n", T.replicate (?ind + 1) "\t", let ?ind = ?ind + 1 in ppExpr e']
   SForEach {iterExpr, elemUid, elemNameMaybe, label, bodyExpr} ->
     T.concat

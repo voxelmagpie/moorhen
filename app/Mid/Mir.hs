@@ -140,6 +140,9 @@ data Stmt'
   | SExpr Expr
   | SAssign LocalVarUid (Maybe TextL) Expr
   | SLoop Expr LocalVarUid
+  | -- Block of code that can be skipped to the end of using break
+    -- Implemented as a for loop in JS, goto when native backend is added
+    SBreakBlock Expr LocalVarUid
   | SForEach
       { iterExpr :: Expr,
         elemUid :: LocalVarUid,

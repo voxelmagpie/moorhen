@@ -66,10 +66,10 @@ mod IterFns [A] for Iter[A]
 				Some(x) -> yield x
 				None -> ()
 
-	let fold (mut xs : Self, f : \A, A -> A, init : A) : A
+	let fold (xs : Self, f : \A, A -> A, init : A) : A
 		xs.fold_(f, init)
 
-	let fold_ [B] (mut xs : Self, f : \B, A -> B, init : B) : B
+	let fold_ [B] (xs : Self, f : \B, A -> B, init : B) : B
 		let mut acc = init
 
 		foreach x in xs
@@ -126,13 +126,15 @@ mod IterFns [A] for Iter[A]
 			set resRev = Next(x, resRev)
 			set l = l + 1
 
-		buildVecRev(
-			l
-			\_ ->
-				match resRev
-					Empty -> undefined
-					Next(x, xs)
-						set resRev = xs
-						x
-		)
+		buildVecFromStack(resRev, l)
 
+let buildVecFromStack [A] (mut resRev : LinkedList[A], l : Int) : Vec[A]
+	buildVecRev(
+		l
+		\_ ->
+			match resRev
+				Empty -> undefined
+				Next(x, xs)
+					set resRev = xs
+					x
+	)

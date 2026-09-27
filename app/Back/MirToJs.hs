@@ -453,6 +453,10 @@ trStmt (s, sr) = case s of
     addLine [(uidToText label <> ": for(;;) {", sr, Nothing)]
     _ <- trExpr body
     addLine [("}", sr, Nothing)]
+  M.SBreakBlock body label -> do
+    addLine [(uidToText label <> ": for(;;) {", sr, Nothing)]
+    _ <- trExpr body
+    addLine [("break;}", sr, Nothing)]
   M.SForEach {iterExpr, elemUid, elemNameMaybe, label, bodyExpr} -> do
     it <- trExpr iterExpr
     let nameComment = case elemNameMaybe of Just (n, _) -> " /* " <> n <> " */"; _ -> ""

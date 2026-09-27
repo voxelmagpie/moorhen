@@ -478,7 +478,7 @@ cvtExpr (e, t, sr) = do
       matchExpr' <- cvtExpr matchExpr
       let letStmt = (M.SLet uid Nothing False matchExpr', snd matchExpr')
 
-      -- The match expression is put in a labelled loop so it can break when a match is found
+      -- The match expression is put in a labelled block so it can break when a match is found
       lbl <- mkLocalVarUid
 
       -- Create a temporary mutable variable (SLet) with no initial value that holds the result
@@ -521,8 +521,8 @@ cvtExpr (e, t, sr) = do
 
       let noMatch = (M.SExpr (M.EUnreachable "Unhandled pattern", sr), sr)
       let resultVar = (M.EVar resultUid Nothing, sr)
-      let loop = (M.SLoop (M.EDoBlock ([letStmt] <> ifs <> [noMatch]) Nothing, sr) lbl, sr)
-      pure (M.EDoBlock [resultStmt, loop] (Just resultVar))
+      let breakableBlock = (M.SBreakBlock (M.EDoBlock ([letStmt] <> ifs <> [noMatch]) Nothing, sr) lbl, sr)
+      pure (M.EDoBlock [resultStmt, breakableBlock] (Just resultVar))
     H.EDataCons (H.DataConsInfo {fqn, dcName, dcIdx, isFn}) -> do
       if isFn
         then do
