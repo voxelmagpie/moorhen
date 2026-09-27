@@ -303,7 +303,6 @@ data Stmt'
   = SLet Destructure Expr
   | SRecLet VNameL LocalVarUid Expr -- Must be a EClosure
   | SExpr Expr
-  | SWhen Expr Expr
   | SAssign LocalVarUid VNameL Expr
   | SForEach
       { destr :: Destructure,

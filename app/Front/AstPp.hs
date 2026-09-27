@@ -197,7 +197,6 @@ ppStmt (SLet destr typ expr, _) =
 ppStmt (SRecLet name typ expr, _) =
   T.concat ["let rec ", un $ fst name, " :: ", ppType typ, " = ", ppExpr expr]
 ppStmt (SExpr expr, sr) = ppExpr (expr, sr)
-ppStmt (SWhen condExpr thenExpr, _) = T.concat ["when ", ppExpr condExpr, " then ", ppExpr thenExpr]
 ppStmt (SAssign (lhs, _) rhs, _) = T.concat ["set ", un lhs, " = ", ppExpr rhs]
 ppStmt (SForEach {destr, inExpr, bodyExpr}, _) = T.concat ["foreach ", ppDestructure destr, " in ", ppExpr inExpr, " then ", ppExpr bodyExpr]
 ppStmt (SLoop e, _) = T.concat ["loop ", ppExpr e]

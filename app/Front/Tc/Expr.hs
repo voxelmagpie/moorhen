@@ -1084,15 +1084,6 @@ visitStmt ctxVar typeHint (astStmt, sr) = case astStmt of
     ctx <- getVar ctxVar
     e' <- visitExpr ctx typeHint (astExpr, sr)
     pure (H.SExpr e', sr)
-  A.SWhen astCondExpr astThenExpr -> do
-    ctx <- getVar ctxVar
-    condExpr@(_, shouldBeBool, _) <- visitExpr ctx boolHint astCondExpr
-    unless (shouldBeBool == boolType)
-      $ throw astCondExpr ("Condition type must be Bool, got " <> typeToText shouldBeBool)
-
-    thenExpr <- visitExpr ctx TUnknown astThenExpr
-
-    pure (H.SWhen condExpr thenExpr, sr)
   A.SAssign n@(name, nameSr) rhs -> do
     ctx <- getVar ctxVar
     var <- case findLocalVarByName ctx name of

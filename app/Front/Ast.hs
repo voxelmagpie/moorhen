@@ -156,7 +156,6 @@ data Stmt'
   = SLet Destructure (Maybe TypeExpr) Expr
   | SRecLet VNameL TypeExpr Expr
   | SExpr Expr'
-  | SWhen Expr Expr
   | SAssign VNameL Expr
   | SForEach
       { destr :: Destructure,

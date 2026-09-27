@@ -720,11 +720,6 @@ cvtStmt (stmt, sr) = case stmt of
   H.SExpr expr -> do
     expr' <- cvtExpr expr
     pure [(M.SExpr expr', sr)]
-  H.SWhen condExpr expr -> do
-    cond' <- cvtExpr condExpr
-    body' <- cvtExpr expr
-    let elseExpr = (M.EDoBlock [] Nothing, sr) -- Empty block for else branch
-    pure [(M.SExpr (M.EIf cond' body' elseExpr M.TUnit, sr), sr)]
   H.SAssign hirUid name expr -> do
     expr' <- cvtExpr expr
     let uid' = M.LocalVarUid (un hirUid)
