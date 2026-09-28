@@ -109,10 +109,12 @@ mod I32Builtins for I32 : Show, Eq
 
 	let neg - : \I32 -> I32
 
-	let bAnd : \ I32, I32 -> I32
-	let bOr : \ I32, I32 -> I32
-	let bXor : \ I32, I32 -> I32
-	let bNot : \ I32 -> I32
+	let bAnd & : \ I32, I32 -> I32
+	let bOr | : \ I32, I32 -> I32
+	let bXor ~ : \ I32, I32 -> I32
+	let bNot ~ : \ I32 -> I32
+	let shr >> : \ I32, I32 -> I32
+	let shl << : \ I32, I32 -> I32
 
 	let show
 	let eq ==
@@ -208,8 +210,9 @@ let panic : \String -> Unreachable
 
 let readLine : \ -> String @Async
 
-// TODO This should be async
-let printLine : \String -> () @Impure
+let print : \String -> () @Async
+let printLine : \String -> () @Async
+let printBytes : \Vec[I32] -> () @Async
 
 // Writes to stderr (or JS console)
 // Pretends to be pure, intended to be used for debugging only

@@ -1,0 +1,121 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+// This demo file generates a blurred noise image and outputs a binary PGM file to stdout
+// It can be run with the following command:
+// sh run_compiler.sh build noise.mh && node out/noise.mjs > noise.pgm
+
+import "#stlib/vec" (..)
+import "#stlib/iter" (..)
+import "#stlib/stlib" (..)
+import "#stlib/num" (..)
+import "#stlib/assert" (..)
+
+let main () @Async
+	let sz = 256
+	let noise = makeNoise(55, 0, 0, 1.0/8.0, 1.0/8.0, sz)
+	writePgm(sz, sz, noise)
+
+let writePgm (width : Int, height: Int, pixels : Vec[I32]) @Async
+	assert(width > 0 and height > 0)
+	assert(width <= 16384 and height <= 16384)
+
+	print("P5\n")
+	print(width.show())
+	print(" ")
+	print(height.show())
+	print("\n255\n")
+	printBytes(pixels)
+
+// Assumes value is between 0 and 1
+let smoothStep (t: Real) : Real
+	t * t * (-t * 2 + 3)
+
+let makeRandom (seed : I32, x: I32, y: I32) : Real
+	let h = mkHashBuilder(seed).add(x).add(y).finish()
+
+	(h % 4194304) as Real / 4194304.0
+
+let noise2d (seed : I32, x: Real, y: Real): Real
+	// Each cell has 4 corners, each with a random value from 0 to 1
+	// Adjacent cells share corners and 'see' the same random value for each shared corner
+	let cellX = x as I32
+	let cellY = y as I32
+
+	// The offset of the pixel within the cell is used to sample the four corners
+	let offX = x - (cellX as Real)
+	let offY = y - (cellY as Real)
+
+	// Get the random values and weights for each corner
+	let samples =
+		[
+			(makeRandom(seed, cellX, cellY), 1 as Real - offX, 1 as Real - offY)
+			(makeRandom(seed, cellX+1, cellY), offX, 1 as Real - offY)
+			(makeRandom(seed, cellX+1, cellY+1), offX, offY)
+			(makeRandom(seed, cellX, cellY+1), 1 as Real - offX, offY)
+		]
+
+	// Combine them, use smoothstep (same function as in GLSL) to prevent artefacts from linear interpolation
+	let mut sum = 0.0
+	foreach r in samples.iter()
+		let x = smoothStep(r.1)
+		let y = smoothStep(r.2)
+		set sum = sum + r.0 * (x*y)
+
+	sum
+
+let makeNoise (seed : I32, offsetX : Real, offsetY : Real, scaleX : Real, scaleY : Real, sz : Int) : Vec[I32]
+	let f (i : Int) : I32
+		let y = (i / sz) as Real
+		let x = (i % sz) as Real
+		let p0 = noise2d(seed, x * 0.06 * scaleX + offsetX, y * 0.06 * scaleY + offsetY)
+		let p1 = noise2d(seed, x * 0.26 * scaleX + offsetX, y * 0.26 * scaleY + offsetY)
+		let p2 = noise2d(seed, x * 2 * scaleX + offsetX, y * 2 * scaleY + offsetY)
+		let p = p0*0.8 + p1*0.18 + p2*0.02
+		(p * 255) as I32
+
+	buildVec(sz*sz, f)
+
+
+// Murmur3-32 hash, based on the C code on wikipedia
+// https://en.wikipedia.org/wiki/MurmurHash#Algorithm
+
+data HashBuilder {
+	value : I32
+	length : I32
+}
+
+let mkHashBuilder (seed : I32) : HashBuilder
+	HashBuilder {
+		value = seed
+		length = 0
+	}
+
+mod HashBuilderFns for HashBuilder
+	let add (self : HashBuilder, k : I32) : HashBuilder
+		let murmur_32_scramble(k: I32) : I32
+			let k = k * (0xcc9e2d51 as I32)
+			let k = (k << 15) | (k >> 17)
+			let k = k * (0x1b873593 as I32)
+
+			k
+
+		let h = self.value
+		let h = h ~ murmur_32_scramble(k)
+		let h = (h << 13) | (h >> 19)
+		let h = h * 5 + (0xe6546b64 as I32)
+
+		HashBuilder{ value=h, length = self.length + 1 }
+
+	let finish (self : HashBuilder) : I32
+		let h = self.value
+		let h = h ~ (self.length as I32)
+		let h = h ~ (h >> 16)
+		let h = h * (0x85ebca6b as I32)
+		let h = h ~ (h >> 13)
+		let h = h * (0xc2b2ae35 as I32)
+		let h = h ~ (h >> 16)
+
+		h
+

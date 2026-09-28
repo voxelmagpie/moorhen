@@ -825,7 +825,7 @@ mkDoBlockExprFromStmts sr stmts =
           (A.EDoBlock stmts Nothing, sr)
 
 allOps :: [Text]
-allOps = ["+", "-", "*", "/", "%", "==", "!=", ">", "<", ">=", "<=", "!", "$", "^", "++", "~"]
+allOps = ["+", "-", "*", "/", "%", "==", "!=", ">", "<", ">=", "<=", "!", "$", "^", "++", "~", "&", "|", ">>", "<<"]
 
 indBlockExpr :: (Args) => IO A.Expr
 indBlockExpr =
@@ -964,13 +964,10 @@ concatOp :: (Args) => Bool -> IO A.Expr
 concatOp isInd = parseLeftAssocOp isInd arithOp ["++"]
 
 arithOp :: (Args) => Bool -> IO A.Expr
-arithOp isInd = parseLeftAssocOp isInd expOp2 ["+", "-"]
-
-expOp2 :: (Args) => Bool -> IO A.Expr
-expOp2 isInd = parseLeftAssocOp isInd arithOp2 ["^"]
+arithOp isInd = parseLeftAssocOp isInd arithOp2 ["+", "-"]
 
 arithOp2 :: (Args) => Bool -> IO A.Expr
-arithOp2 isInd = parseLeftAssocOp isInd atomExpr ["*", "/", "%"]
+arithOp2 isInd = parseLeftAssocOp isInd atomExpr ["*", "/", "%", "^", "~", "&", "|", ">>", "<<"]
 
 atomExpr :: (Args) => Bool -> IO A.Expr
 atomExpr isInd = do

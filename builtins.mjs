@@ -79,6 +79,8 @@ function $0builtins$1$2I32Builtins$3neg(x) { return -x; }
 function $0builtins$1$2I32Builtins$3bAnd(x, y) { return x & y; }
 function $0builtins$1$2I32Builtins$3bOr(x, y) { return x | y; }
 function $0builtins$1$2I32Builtins$3bXor(x, y) { return x ^ y; }
+function $0builtins$1$2I32Builtins$3shr(x, y) { return x >> y; }
+function $0builtins$1$2I32Builtins$3shl(x, y) { return x << y; }
 function $0builtins$1$2I32Builtins$3bNot(x) { return ~x; }
 
 
@@ -238,10 +240,19 @@ async function $0builtins$1$2readLine() {
     }
 }
 
+import { promisify } from 'node:util';
+const writeStdoutAsync = promisify(process.stdout.write).bind(process.stdout);
 
+async function $0builtins$1$2printLine(s) {
+    await writeStdoutAsync(s + "\n");
+}
 
-function $0builtins$1$2printLine(s) {
-    console.log(s);
+async function $0builtins$1$2print(s) {
+    await writeStdoutAsync(s);
+}
+
+async function $0builtins$1$2printBytes(xs) {
+    await writeStdoutAsync(Buffer.from(xs));
 }
 
 function $0builtins$1$2dbgString(s) {
